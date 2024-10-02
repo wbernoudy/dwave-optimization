@@ -907,7 +907,7 @@ cdef class Model:
         G = networkx.MultiDiGraph()
 
         # Add the symbols, in order if we happen to be topologically sorted
-        G.add_nodes_from(repr(symbol) for symbol in self.iter_symbols())
+        G.add_nodes_from((repr(symbol), dict(label=str(symbol))) for symbol in self.iter_symbols())
 
         # Sanity check. If several nodes map to the same symbol repr we'll see
         # too few nodes in the graph

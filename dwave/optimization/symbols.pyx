@@ -399,6 +399,18 @@ cdef class AdvancedIndexing(ArraySymbol):
 
         self.initialize_arraynode(model, self.ptr)
 
+    def __str__(self):
+        indices = []
+        op_count = 0
+        for variant in self.ptr.indices():
+            if holds_alternative[cppSlice](variant):
+                indices.append(":")
+            else:
+                indices.append(f"op{op_count}")
+                op_count += 1
+
+        return f"A[{', '.join(indices)}]"
+
     def __getitem__(self, index):
         # There is a very specific case we want to handle, when we are [x, :] or [:, x]
         # and we're doing the inverse indexing operation, and where the main array is
@@ -518,6 +530,19 @@ cdef class BasicIndexing(ArraySymbol):
         self.ptr = model._graph.emplace_node[cppBasicIndexingNode](array.array_ptr, cppindices)
 
         self.initialize_arraynode(model, self.ptr)
+
+    def __str__(self):
+        indices = []
+        for idx in self._infer_indices():
+            if isinstance(idx, slice):
+                s = f"{idx.start}:{idx.stop}"
+                if idx.step != 1:
+                    s += ":{idx.step}"
+                indices.append(s)
+            else:
+                indices.append(str(idx))
+
+        return f"B[{', '.join(indices)}]"
 
     @staticmethod
     cdef cppSlice cppslice(object index):
@@ -759,6 +784,9 @@ cdef class Constant(ArraySymbol):
 
         # Have the parent model hold a reference to the array, so it's kept alive
         model._data_sources.append(array)
+
+    def __str__(self):
+        return f"Constant({self.shape()})"
 
     def __bool__(self):
         if not self._is_scalar():
@@ -1628,6 +1656,9 @@ cdef class ListVariable(ArraySymbol):
 
         self.initialize_arraynode(model, self.ptr)
 
+    def __str__(self):
+        return f"List({int(self.ptr.max())})"
+
     @staticmethod
     def _from_symbol(Symbol symbol):
         cdef cppListNode* ptr = dynamic_cast_ptr[cppListNode](symbol.node_ptr)
@@ -1782,6 +1813,9 @@ cdef class Maximum(ArraySymbol):
         self.ptr = model._graph.emplace_node[cppMaximumNode](lhs.array_ptr, rhs.array_ptr)
 
         self.initialize_arraynode(model, self.ptr)
+
+    def __str__(self):
+        return "max"
 
     @staticmethod
     def _from_symbol(Symbol symbol):
@@ -1947,6 +1981,9 @@ cdef class NaryAdd(ArraySymbol):
 
         self.ptr = model._graph.emplace_node[cppNaryAddNode](cppinputs)
         self.initialize_arraynode(model, self.ptr)
+
+    def __str__(self):
+        return "+"
 
     @staticmethod
     def _from_symbol(Symbol symbol):
