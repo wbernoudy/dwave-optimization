@@ -18,6 +18,7 @@
 #include <ranges>
 
 #include "dwave-optimization/utils.hpp"
+#include "_state.hpp"
 
 namespace dwave::optimization {
 
@@ -108,6 +109,52 @@ double ConstantNode::min() const {
 
     // Return the cached value
     return buffer_stats_->min;
+}
+
+void InputNode::initialize_state(State& state) const {
+    int index = this->topological_index();
+    assert(index >= 0 && "must be topologically sorted");
+    assert(static_cast<int>(state.size()) > index && "unexpected state length");
+    assert(state[index] == nullptr && "already initialized state");
+
+    std::vector<double> values;
+    values.assign(this->data().begin(), this->data().end());
+    state[index] = std::make_unique<ArrayNodeStateData>(std::move(values));
+}
+
+double const* InputNode::buff(const State& state) const {
+    return data_ptr<ArrayNodeStateData>(state)->buff();
+}
+
+std::span<const Update> InputNode::diff(const State& state) const noexcept {
+    return data_ptr<ArrayNodeStateData>(state)->diff();
+}
+
+void InputNode::commit(State& state) const noexcept {
+    data_ptr<ArrayNodeStateData>(state)->commit();
+}
+
+void InputNode::revert(State& state) const noexcept {
+    data_ptr<ArrayNodeStateData>(state)->revert();
+}
+
+void InputNode::assign(State& state, std::vector<double>& new_values) const {
+    if (static_cast<ssize_t>(new_values.size()) != this->size()) {
+        throw std::invalid_argument("size of new values must match");
+    }
+
+    BufferStats stats(new_values);
+    if (stats.min < min()) {
+        throw std::invalid_argument("new data contains a value smaller than the min");
+    }
+    if (stats.max > max()) {
+        throw std::invalid_argument("new data contains a value smaller than the min");
+    }
+    if (integral() && !stats.integral) {
+        throw std::invalid_argument("new data contains a non-integral value");
+    }
+
+    data_ptr<ArrayNodeStateData>(state)->assign(new_values);
 }
 
 }  // namespace dwave::optimization

@@ -100,6 +100,17 @@ class ConstantNode : public ArrayOutputMixin<ArrayNode> {
     void commit(State&) const noexcept override {}
     void revert(State&) const noexcept override {}
 
+ protected:
+    // Information about the values in the buffer
+    struct BufferStats {
+        BufferStats() = delete;
+        explicit BufferStats(std::span<const double> buffer);
+
+        bool integral;
+        double min;
+        double max;
+    };
+
  private:
     // Allocate the memory to hold shape worth of doubles, but don't populate it
     explicit ConstantNode(std::initializer_list<ssize_t> shape)
@@ -118,16 +129,48 @@ class ConstantNode : public ArrayOutputMixin<ArrayNode> {
     // holds its values on the object itself rather than in a State.
     double* buffer_ptr_;
 
-    // Information about the values in the buffer
-    struct BufferStats {
-        BufferStats() = delete;
-        explicit BufferStats(std::span<const double> buffer);
-
-        bool integral;
-        double min;
-        double max;
-    };
     mutable std::optional<BufferStats> buffer_stats_;
+};
+
+// InputNode acts like a placeholder or store of data very similar to ConstantNode,
+// with the key different being that its contents *may* change in between propagations.
+// However, it is not a decision variable--instead its use cases are acting as an "input"
+// for "models as functions", or for placeholders in large models where (otherwise constant)
+// data changes infrequently (e.g. a scheduling problem with a preference matrix).
+//
+// Initial values can be provided at node construction that will be used on state initialization.
+// Otherwise, the node will be initialized with all zeros.
+// TODO: finalize the constructors
+class InputNode : public ConstantNode {
+ public:
+    // // A single scalar value
+    // explicit InputNode(double value, double min, double max, bool integral = false)
+    //         : ConstantNode(value), min_(min), max_(max), integral_(integral) { };
+    template<typename... Args>
+    explicit InputNode(double min, double max, bool integral, Args&&... args)
+            : ConstantNode(std::forward<Args&&>(args)...), min_(min), max_(max), integral_(integral) { };
+
+    bool integral() const override { return integral_; };
+
+    double max() const override { return max_; };
+    double min() const override { return min_; };
+
+    void initialize_state(State& state) const override;
+
+    // double const* buff() const;
+    double const* buff(const State&) const override;
+
+    std::span<const Update> diff(const State& state) const noexcept override;
+
+    void propagate(State& state) const noexcept override {};
+    void commit(State& state) const noexcept override;
+    void revert(State& state) const noexcept override;
+
+    void assign(State& state, std::vector<double>& new_values) const;
+
+ private:
+    double min_, max_;
+    bool integral_;
 };
 
 }  // namespace dwave::optimization

@@ -15,6 +15,7 @@
 #include "catch2/catch_test_macros.hpp"
 #include "dwave-optimization/graph.hpp"
 #include "dwave-optimization/nodes/constants.hpp"
+#include "dwave-optimization/nodes/testing.hpp"
 
 namespace dwave::optimization {
 
@@ -125,6 +126,77 @@ TEST_CASE("ConstantNode") {
 
             THEN("The ConstantNode is mutated accordingly") {
                 CHECK(std::ranges::equal(ptr->data(), std::vector{30, 10, -105, 20}));
+            }
+        }
+    }
+}
+
+TEST_CASE("InputNode") {
+    auto graph = Graph();
+
+    GIVEN("An input node starting with state copied from a vector") {
+        std::vector<double> values = {30, 10, 40, 20};
+        auto ptr = graph.emplace_node<InputNode>(10, 50, true, values);
+        auto val = graph.emplace_node<ArrayValidationNode>(ptr);
+
+        THEN("It copies the values into a 1d array") {
+            CHECK(ptr->ndim() == 1);
+            CHECK(ptr->size() == 4);
+            CHECK(std::ranges::equal(ptr->data(), values));
+            CHECK(std::ranges::equal(ptr->shape(), std::vector{4}));
+            CHECK(std::ranges::equal(ptr->strides(), std::vector{sizeof(double)}));
+        }
+
+        THEN("min/max/integral are set from arguments") {
+            CHECK(ptr->min() == 10);
+            CHECK(ptr->max() == 50);
+            CHECK(ptr->integral());
+        }
+
+        AND_GIVEN("An initialized state") {
+            auto state = graph.initialize_state();
+
+            THEN("The state defaults to the values from the vector") {
+                CHECK(std::ranges::equal(ptr->view(state), values));
+            }
+
+            AND_WHEN("We assign new values and propagate") {
+                std::vector<double> new_values = {20, 10, 49, 50};
+                ptr->assign(state, new_values);
+
+                ptr->propagate(state);
+                val->propagate(state);
+
+                THEN("The InputNode has the new values") {
+                    CHECK(std::ranges::equal(ptr->view(state), new_values));
+                }
+
+                THEN("We can commit") {
+                    ptr->commit(state);
+                    val->commit(state);
+                }
+
+                THEN("We can revert") {
+                    ptr->revert(state);
+                    val->revert(state);
+                }
+            }
+
+            AND_WHEN("We assign invalid values we get an exception") {
+                std::vector<double> new_values = {20, 10, 49, 51};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {9, 9, 9, 9};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {9.99, 50.01, 25, 25};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {20, 20, 20};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {20, 20, 20, 20, 20};
+                CHECK_THROWS(ptr->assign(state, new_values));
             }
         }
     }
