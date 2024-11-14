@@ -39,27 +39,41 @@ class NaryReduceNodeData : public ArrayNodeStateData {
 
 Graph validate_expression(Graph&& expression, const std::vector<InputNode*> inputs,
                           const ArrayNode* output) {
+    if (!expression.topologically_sorted()) {
+        throw std::invalid_argument("Expression must be topologically sorted");
+    }
+
     if (expression.num_decisions()) {
-        throw std::invalid_argument("Expression should not have any decision variables");
+        // At least one decision, so the first node must be a decision
+        throw std::invalid_argument(
+                R"({"message": "Expression should not have any decision variables", "node_ptr": )"
+                + std::to_string((uintptr_t)(void *)expression.nodes()[0].get()) + "}"
+        );
     }
 
     for (ssize_t node_idx = 0; node_idx < expression.num_nodes(); node_idx++) {
-        const ArrayNode* array_node =
-                dynamic_cast<const ArrayNode*>(expression.nodes()[node_idx].get());
+        const Node* node_ptr = expression.nodes()[node_idx].get();
+        const ArrayNode* array_node = dynamic_cast<const ArrayNode*>(node_ptr);
         if (!array_node) {
-            throw std::invalid_argument("Expression should contain only array nodes, node=" +
-                                        std::to_string(node_idx));
+            throw std::invalid_argument(
+                    R"({"message": "Expression should contain only array nodes", "node_ptr": )"
+                    + std::to_string((uintptr_t)(void *)node_ptr) + "}"
+            );
         }
 
         if (!is_variant<ConstantNode, MaximumNode, NegativeNode, AddNode, SubtractNode,
                         MultiplyNode>(array_node)) {
-            throw std::invalid_argument("Expression contains unsupported node, node=" +
-                                        std::to_string(node_idx));
+            throw std::invalid_argument(
+                    R"({"message": "Expression contains unsupported node", "node_ptr": )"
+                    + std::to_string((uintptr_t)(void *)node_ptr) + "}"
+            );
         }
 
         if (array_node->ndim() != 0) {
-            throw std::invalid_argument("Expression should only contain scalars, node=" +
-                                        std::to_string(node_idx));
+            throw std::invalid_argument(
+                    R"({"message": "Expression should only contain scalars", "node_ptr": )"
+                    + std::to_string((uintptr_t)(void *)node_ptr) + "}"
+            );
         }
     }
 

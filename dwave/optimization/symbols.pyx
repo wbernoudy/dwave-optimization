@@ -23,13 +23,15 @@ import numbers
 cimport cpython.object
 import cython
 import numpy as np
+from typing import Collection
 
 from cpython.ref cimport PyObject
 from cython.operator cimport dereference as deref, typeid
 from libc.math cimport modf
 from libcpp cimport bool
-from libcpp.cast cimport dynamic_cast
+from libcpp.cast cimport dynamic_cast, reinterpret_cast
 from libcpp.optional cimport nullopt, optional
+from libc.stdint cimport uintptr_t
 from libcpp.typeindex cimport type_index
 from libcpp.unordered_map cimport unordered_map
 from libcpp.utility cimport move
@@ -58,6 +60,7 @@ from dwave.optimization.libcpp.nodes cimport (
     DisjointListNode as cppDisjointListNode,
     DisjointListsNode as cppDisjointListsNode,
     EqualNode as cppEqualNode,
+    InputNode as cppInputNode,
     IntegerNode as cppIntegerNode,
     LessEqualNode as cppLessEqualNode,
     ListNode as cppListNode,
@@ -72,6 +75,7 @@ from dwave.optimization.libcpp.nodes cimport (
     NaryMaximumNode as cppNaryMaximumNode,
     NaryMinimumNode as cppNaryMinimumNode,
     NaryMultiplyNode as cppNaryMultiplyNode,
+    NaryReduceNode as cppNaryReduceNode,
     NegativeNode as cppNegativeNode,
     NotNode as cppNotNode,
     OrNode as cppOrNode,
@@ -92,6 +96,8 @@ from dwave.optimization.libcpp.nodes cimport (
 from dwave.optimization.model cimport ArraySymbol, Model, Symbol
 
 ctypedef cppArrayNode* cppArrayNodePtr  # Cython gets confused when templating pointers
+ctypedef cppNode* cppNodePtr
+ctypedef void* voidPtr
 
 __all__ = [
     "Absolute",
@@ -109,6 +115,7 @@ __all__ = [
     "DisjointLists",
     "DisjointList",
     "Equal",
+    "Input",
     "IntegerVariable",
     "LessEqual",
     "ListVariable",
@@ -123,6 +130,7 @@ __all__ = [
     "NaryMaximum",
     "NaryMinimum",
     "NaryMultiply",
+    "NaryReduce",
     "Negative",
     "Not",
     "Or",
@@ -1522,6 +1530,49 @@ cdef class Equal(ArraySymbol):
 _register(Equal, typeid(cppEqualNode))
 
 
+cdef class Input(ArraySymbol):
+    """TODO"""
+
+    # TODO: implement serialization
+
+    def __init__(self, Model model, array_like, lower_bound: float, upper_bound: float, integral: bool):
+        # In the future we won't need to be contiguous, but we do need to be right now
+        array = np.asarray(array_like, dtype=np.double, order="C")
+
+        # Get the shape and strides
+        cdef vector[Py_ssize_t] shape = array.shape
+        cdef vector[Py_ssize_t] strides = array.strides  # not used because contiguous for now
+
+        # Get a pointer to the first element
+        cdef double[:] flat = array.ravel()
+        cdef double* start = NULL
+        if flat.size:
+            start = &flat[0]
+
+        # Get an observing pointer to the C++ InputNode
+        self.ptr = model._graph.emplace_node[cppInputNode](lower_bound, upper_bound, integral, start, shape)
+
+        self.initialize_arraynode(model, self.ptr)
+
+        # Have the parent model hold a reference to the array, so it's kept alive
+        model._data_sources.append(array)
+
+    @staticmethod
+    def _from_symbol(Symbol symbol):
+        cdef cppInputNode* ptr = dynamic_cast_ptr[cppInputNode](symbol.node_ptr)
+        if not ptr:
+            raise TypeError("given symbol cannot be used to construct a Input")
+
+        cdef Input inp = Input.__new__(Input)
+        inp.ptr = ptr
+        inp.initialize_arraynode(symbol.model, ptr)
+        return inp
+
+    cdef cppInputNode* ptr
+
+_register(Input, typeid(cppInputNode))
+
+
 cdef class IntegerVariable(ArraySymbol):
     """Integer decision-variable symbol.
 
@@ -2214,6 +2265,100 @@ cdef class NaryMultiply(ArraySymbol):
     cdef cppNaryMultiplyNode* ptr
 
 _register(NaryMultiply, typeid(cppNaryMultiplyNode))
+
+
+# TODO: consider different location for this?
+class UnsupportedNaryReduceExpression(Exception):
+    def __init__(self, message: str, symbol: Symbol):
+        super().__init__(message)
+        self.symbol = symbol
+
+
+cdef class NaryReduce(ArraySymbol):
+    """TODO"""
+
+    # TODO: implement serialization
+
+    def __init__(
+        self,
+        input_symbols: Collection[Input],
+        ArraySymbol output_symbol,
+        operands: Collection[ArraySymbol],
+        initial_values: Optional[tuple[float]] = None,
+    ):
+        if len(operands) == 0:
+            raise ValueError("must have at least one operand")
+
+        if len(input_symbols) != len(operands) + 1:
+            raise ValueError("must have exactly one more input than number of operands")
+
+        if initial_values is None:
+            initial_values = (0,) * len(input_symbols)
+
+        if len(initial_values) != len(input_symbols):
+            raise ValueError("must have same number of initial values as inputs")
+
+        cdef Model expression = input_symbols[0].model
+        cdef Model model = operands[0].model
+        cdef cppArrayNode* output = output_symbol.array_ptr
+        cdef vector[double] cppinitial_values
+        cdef vector[cppInputNode*] cppinputs
+        cdef vector[cppArrayNode*] cppoperands
+
+        for val in initial_values:
+            cppinitial_values.push_back(val)
+
+        cdef Input inp
+        for node in input_symbols:
+            if node.model != expression:
+                raise ValueError("all inputs must belong to the expression model")
+            inp = <Input?>node
+            cppinputs.push_back(inp.ptr)
+
+        cdef ArraySymbol array
+        for node in operands:
+            if node.model != model:
+                raise ValueError("all predecessors must be from the same model")
+            array = <ArraySymbol?>node
+            cppoperands.push_back(array.array_ptr)
+
+        with expression.lock():
+            try:
+                self.ptr = model._graph.emplace_node[cppNaryReduceNode](
+                    move(expression._graph), cppinputs, output, cppinitial_values, cppoperands
+                )
+            except ValueError as e:
+                raise self._handle_unsupported_expression_exception(expression, e)
+
+        self.initialize_arraynode(model, self.ptr)
+
+    def _handle_unsupported_expression_exception(self, Model expression, exception: ValueError):
+        try:
+            info = json.loads(str(exception))
+        except json.JSONDecodeError:
+            raise RuntimeError("could not parse exception message from NaryReduceNode")
+
+        cdef uintptr_t node_ptr_val = info["node_ptr"]
+        cdef cppNode* node_ptr = reinterpret_cast[cppNodePtr](<void *>node_ptr_val)
+        cdef Symbol symbol = symbol_from_ptr(expression, node_ptr)
+        e = UnsupportedNaryReduceExpression(info["message"], symbol)
+        return e
+
+    @staticmethod
+    def _from_symbol(Symbol symbol):
+        cdef cppNaryReduceNode* ptr = dynamic_cast_ptr[cppNaryReduceNode](
+            symbol.node_ptr
+        )
+        if not ptr:
+            raise TypeError("given symbol cannot be used to construct an NaryReduce")
+        cdef NaryReduce x = NaryReduce.__new__(NaryReduce)
+        x.ptr = ptr
+        x.initialize_arraynode(symbol.model, ptr)
+        return x
+
+    cdef cppNaryReduceNode* ptr
+
+_register(NaryReduce, typeid(cppNaryReduceNode))
 
 
 cdef class Negative(ArraySymbol):

@@ -1100,6 +1100,19 @@ class TestDisjointListsVariable(utils.SymbolTests):
             self.assertEqual(s.state_size(), 10 * 8)
 
 
+class TestInput(utils.SymbolTests):
+    def generate_symbols(self):
+        model = Model()
+        inp = model.input(-10, 10, False)
+        model.lock()
+        yield inp
+
+    # TODO: enable once implemented
+    @unittest.skip("not yet implemented")
+    def test_serialization(*args, **kwargs):
+        pass
+
+
 class TestIntegerVariable(utils.SymbolTests):
     def generate_symbols(self):
         model = Model()
@@ -1742,6 +1755,81 @@ class TestNaryMultiply(utils.NaryOpTests):
 
         with self.assertRaises(ValueError):
             x *= b  # after promotion
+
+
+class TestNaryReduce(utils.SymbolTests):
+    def generate_symbols(self):
+        model = Model()
+        c0 = model.constant([0, 0])
+        c1 = model.constant([0, 1])
+
+        exp = Model()
+        inputs = [exp.input(-10, 10, False) for _ in range(3)]
+        sum_ = inputs[0] + inputs[1] + inputs[2]
+
+        acc = dwave.optimization.symbols.NaryReduce(inputs, sum_, (c0, c1))
+
+        model.lock()
+        yield acc
+
+    def test_mismatched_inputs(self):
+        model = Model()
+        c0 = model.constant([0, 0])
+        c1 = model.constant([0, 1])
+
+        exp = Model()
+        inputs = [exp.input(-10, 10, False) for _ in range(3)]
+        sum_ = inputs[0] + inputs[1] + inputs[2]
+
+        with self.assertRaises(ValueError):
+            dwave.optimization.symbols.NaryReduce(inputs, sum_, (c0,))
+
+        with self.assertRaises(ValueError):
+            dwave.optimization.symbols.NaryReduce(inputs[:1], sum_, (c0, c1))
+
+        with self.assertRaises(ValueError):
+            dwave.optimization.symbols.NaryReduce(inputs, sum_, (c0, c1), initial_values=(0,))
+
+    def test_invalid_expressions(self):
+        model = Model()
+        c0 = model.constant([0, 0])
+
+        exp = Model()
+        inputs = [exp.input(-10, 10, False) for _ in range(2)]
+        i = exp.integer()
+        sum_ = inputs[0] + inputs[1]
+
+        try:
+            dwave.optimization.symbols.NaryReduce(inputs, sum_, (c0,))
+            self.assertTrue(False, "should have raise exception")
+        except Exception as e:
+            self.assertIsInstance(e, dwave.optimization.symbols.UnsupportedNaryReduceExpression)
+            self.assertRegex(str(e), "decision")
+            self.assertTrue(i.equals(e.symbol))
+
+        exp = Model()
+        inputs = [exp.input(-10, 10, False) for _ in range(2)]
+        reshape = inputs[0].reshape((1, 1, 1))
+
+        try:
+            dwave.optimization.symbols.NaryReduce(inputs, reshape, (c0,))
+            self.assertTrue(False, "should have raise exception")
+        except Exception as e:
+            self.assertIsInstance(e, dwave.optimization.symbols.UnsupportedNaryReduceExpression)
+            self.assertRegex(str(e), "unsupported node")
+            self.assertTrue(reshape.equals(e.symbol))
+
+        # TODO: craft example with non-scalar... not sure how to do that right now
+
+    # TODO: enable once implemented
+    @unittest.skip("not yet implemented")
+    def test_serialization(*args, **kwargs):
+        pass
+
+    # TODO: enable once implemented
+    @unittest.skip("not yet implemented")
+    def test_state_serialization(*args, **kwargs):
+        pass
 
 
 class TestNegate(utils.UnaryOpTests):
