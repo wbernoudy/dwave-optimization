@@ -73,6 +73,7 @@ class Graph {
  public:
     Graph();
     ~Graph();
+    Graph(Graph&&);
 
     template <class NodeType, class... Args>
     NodeType* emplace_node(Args&&... args);

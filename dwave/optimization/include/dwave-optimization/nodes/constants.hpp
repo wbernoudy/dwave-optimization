@@ -143,12 +143,17 @@ class ConstantNode : public ArrayOutputMixin<ArrayNode> {
 // TODO: finalize the constructors
 class InputNode : public ConstantNode {
  public:
-    // // A single scalar value
-    // explicit InputNode(double value, double min, double max, bool integral = false)
-    //         : ConstantNode(value), min_(min), max_(max), integral_(integral) { };
-    template<typename... Args>
+    template <typename... Args>
     explicit InputNode(double min, double max, bool integral, Args&&... args)
-            : ConstantNode(std::forward<Args&&>(args)...), min_(min), max_(max), integral_(integral) { };
+            : ConstantNode(std::forward<Args&&>(args)...),
+              min_(min),
+              max_(max),
+              integral_(integral){};
+
+    template <typename... Args>
+    explicit InputNode()
+            : InputNode(-std::numeric_limits<double>::infinity(),
+                        std::numeric_limits<double>::infinity(), false, 0.0){};
 
     bool integral() const override { return integral_; };
 
@@ -166,7 +171,8 @@ class InputNode : public ConstantNode {
     void commit(State& state) const noexcept override;
     void revert(State& state) const noexcept override;
 
-    void assign(State& state, std::vector<double>& new_values) const;
+    void assign(State& state, const std::vector<double>& new_values) const;
+    void assign(State& state, std::span<const double> new_values) const;
 
  private:
     double min_, max_;

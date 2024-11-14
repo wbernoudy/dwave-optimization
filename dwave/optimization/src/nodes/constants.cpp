@@ -138,7 +138,7 @@ void InputNode::revert(State& state) const noexcept {
     data_ptr<ArrayNodeStateData>(state)->revert();
 }
 
-void InputNode::assign(State& state, std::vector<double>& new_values) const {
+void InputNode::assign(State& state, std::span<const double> new_values) const {
     if (static_cast<ssize_t>(new_values.size()) != this->size()) {
         throw std::invalid_argument("size of new values must match");
     }
@@ -155,6 +155,10 @@ void InputNode::assign(State& state, std::vector<double>& new_values) const {
     }
 
     data_ptr<ArrayNodeStateData>(state)->assign(new_values);
+}
+
+void InputNode::assign(State& state, const std::vector<double>& new_values) const {
+    this->assign(state, std::span(new_values));
 }
 
 }  // namespace dwave::optimization

@@ -14,6 +14,8 @@
 
 #include "dwave-optimization/array.hpp"
 
+#include <ranges>
+
 namespace dwave::optimization {
 
 SizeInfo::SizeInfo(const Array* array_ptr, std::optional<ssize_t> min, std::optional<ssize_t> max)
@@ -194,6 +196,41 @@ bool array_shape_equal(const Array* lhs_ptr, const Array* rhs_ptr) {
 }
 bool array_shape_equal(const Array& lhs, const Array& rhs) {
     return array_shape_equal(&lhs, &rhs);
+}
+
+bool array_shape_equal(const std::span<const Array* const> array_ptrs) {
+    if (array_ptrs.size() == 0) {
+        return false;
+    }
+
+    const Array* first_ptr = array_ptrs[0];
+    auto first_size = first_ptr->sizeinfo();
+    while (first_size.array_ptr != nullptr && first_size.array_ptr != first_ptr) {
+        first_ptr = first_size.array_ptr;
+        first_size = first_size.substitute();
+    }
+
+    for (const Array* array_ptr : array_ptrs | std::views::take(1)) {
+        auto this_size = array_ptr->sizeinfo();
+
+        if (first_size == this_size) continue;
+        if (this_size.array_ptr == nullptr) return false;
+
+        while (this_size.array_ptr != nullptr && this_size.array_ptr != array_ptr) {
+            array_ptr = this_size.array_ptr;
+            this_size = this_size.substitute();
+            if (first_size == this_size) break;
+        }
+
+        // Have to check again as it's possible that `this_size.array_ptr` is nullptr
+        if (first_size != this_size) return false;
+    }
+
+    return true;
+}
+
+bool array_shape_equal(const std::vector<const Array*>& array_ptrs) {
+    return array_shape_equal(std::span<const Array* const>{array_ptrs});
 }
 
 // We follow NumPy's broadcasting rules
