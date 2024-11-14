@@ -46,61 +46,47 @@ Graph validate_expression(Graph&& expression, const std::vector<InputNode*> inpu
     if (expression.num_decisions()) {
         // At least one decision, so the first node must be a decision
         throw std::invalid_argument(
-                R"({"message": "Expression should not have any decision variables", "node_ptr": )"
-                + std::to_string((uintptr_t)(void *)expression.nodes()[0].get()) + "}"
-        );
+                R"({"message": "Expression should not have any decision variables", "node_ptr": )" +
+                std::to_string((uintptr_t)(void*)expression.nodes()[0].get()) + "}");
     }
 
-    for (ssize_t node_idx = 0; node_idx < expression.num_nodes(); node_idx++) {
-        const Node* node_ptr = expression.nodes()[node_idx].get();
-        const ArrayNode* array_node = dynamic_cast<const ArrayNode*>(node_ptr);
+    for (const auto& node_ptr : expression.nodes()) {
+        const ArrayNode* array_node = dynamic_cast<const ArrayNode*>(node_ptr.get());
         if (!array_node) {
             throw std::invalid_argument(
-                    R"({"message": "Expression should contain only array nodes", "node_ptr": )"
-                    + std::to_string((uintptr_t)(void *)node_ptr) + "}"
-            );
+                    R"({"message": "Expression should contain only array nodes", "node_ptr": )" +
+                    std::to_string((uintptr_t)(void*)node_ptr.get()) + "}");
         }
 
         if (!is_variant<ConstantNode, MaximumNode, NegativeNode, AddNode, SubtractNode,
                         MultiplyNode>(array_node)) {
             throw std::invalid_argument(
-                    R"({"message": "Expression contains unsupported node", "node_ptr": )"
-                    + std::to_string((uintptr_t)(void *)node_ptr) + "}"
-            );
+                    R"({"message": "Expression contains unsupported node", "node_ptr": )" +
+                    std::to_string((uintptr_t)(void*)node_ptr.get()) + "}");
         }
 
         if (array_node->ndim() != 0) {
             throw std::invalid_argument(
-                    R"({"message": "Expression should only contain scalars", "node_ptr": )"
-                    + std::to_string((uintptr_t)(void *)node_ptr) + "}"
-            );
+                    R"({"message": "Expression should only contain scalars", "node_ptr": )" +
+                    std::to_string((uintptr_t)(void*)node_ptr.get()) + "}");
         }
     }
 
     return expression;
 }
 
-auto get_operands_shape(const std::vector<ArrayNode*>& operands) {
+auto get_operands_shape(const std::vector<InputNode*>& inputs,
+                        const std::vector<double>& initial_values,
+                        const std::vector<ArrayNode*>& operands) {
     if (operands.size() == 0) {
         throw std::invalid_argument("Must have at least one operand");
     }
-    return operands[0]->shape();
-}
 
-NaryReduceNode::NaryReduceNode(Graph&& expression, const std::vector<InputNode*> inputs,
-                               const ArrayNode* output, const std::vector<double>& initial_values,
-                               const std::vector<ArrayNode*>& operands)
-        : ArrayOutputMixin(get_operands_shape(operands)),
-          expression_(validate_expression(std::move(expression), inputs, output)),
-          inputs_(inputs),
-          output_(output),
-          operands_(operands),
-          initial_values_(initial_values) {
-    if (operands_.size() + 1 != inputs.size()) {
+    if (operands.size() + 1 != inputs.size()) {
         throw std::invalid_argument("Expression must have one more InputNode than operands");
     }
 
-    if (operands_.size() + 1 != initial_values.size()) {
+    if (operands.size() + 1 != initial_values.size()) {
         throw std::invalid_argument("Must have same number of initial values as operands");
     }
 
@@ -113,6 +99,18 @@ NaryReduceNode::NaryReduceNode(Graph&& expression, const std::vector<InputNode*>
         throw std::invalid_argument("All operands must have the same shape");
     }
 
+    return operands[0]->shape();
+}
+
+NaryReduceNode::NaryReduceNode(Graph&& expression, const std::vector<InputNode*>& inputs,
+                               const ArrayNode* output, const std::vector<double>& initial_values,
+                               const std::vector<ArrayNode*>& operands)
+        : ArrayOutputMixin(get_operands_shape(inputs, initial_values, operands)),
+          expression_(validate_expression(std::move(expression), inputs, output)),
+          inputs_(inputs),
+          output_(output),
+          operands_(operands),
+          initial_values_(initial_values) {
     for (const auto& op : operands_) {
         add_predecessor(op);
     }

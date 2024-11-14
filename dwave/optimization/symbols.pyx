@@ -97,7 +97,6 @@ from dwave.optimization.model cimport ArraySymbol, Model, Symbol
 
 ctypedef cppArrayNode* cppArrayNodePtr  # Cython gets confused when templating pointers
 ctypedef cppNode* cppNodePtr
-ctypedef void* voidPtr
 
 __all__ = [
     "Absolute",

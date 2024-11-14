@@ -182,7 +182,7 @@ bool is_variant(const node_type* node_ptr) {
         return is_variant<Ts...>(node_ptr);
     }
 
-    // If none match, then just return the Node*;
+    // If none match, then this Node didn't belong to the list of types
     return false;
 }
 
