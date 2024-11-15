@@ -22,6 +22,18 @@
 
 namespace dwave::optimization {
 
+class UnsupportedNaryReduceExpressionError : public std::exception {
+ public:
+    UnsupportedNaryReduceExpressionError(const std::string message, const Node* node_ptr = nullptr);
+
+    const char* what() const noexcept override;
+
+    const Node* node_ptr_;
+
+ private:
+    const std::string message_;
+};
+
 class NaryReduceNode : public ArrayOutputMixin<ArrayNode> {
  public:
     // Runtime constructor that can be used from Cython/Python

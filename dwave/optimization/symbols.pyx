@@ -93,6 +93,7 @@ from dwave.optimization.libcpp.nodes cimport (
     WhereNode as cppWhereNode,
     XorNode as cppXorNode,
     )
+from dwave.optimization.libcpp cimport python_exception_handling
 from dwave.optimization.model cimport ArraySymbol, Model, Symbol
 
 ctypedef cppArrayNode* cppArrayNodePtr  # Cython gets confused when templating pointers
@@ -146,6 +147,9 @@ __all__ = [
     "Where",
     "Xor",
     ]
+
+python_exception_handling.create_custom_exceptions()
+_UnsupportedNaryReduceExpressionError = <object>python_exception_handling.UnsupportedNaryReduceExpressionPyExc
 
 # We would like to be able to do constructions like dynamic_cast[cppConstantNode*](...)
 # but Cython does not allow pointers as template types
@@ -2269,7 +2273,10 @@ _register(NaryMultiply, typeid(cppNaryMultiplyNode))
 # TODO: consider different location for this?
 class UnsupportedNaryReduceExpression(Exception):
     def __init__(self, message: str, symbol: Symbol):
-        super().__init__(message)
+        full_message = f"{message}: contains `{type(symbol).__qualname__}` symbol"
+        if isinstance(symbol, ArraySymbol):
+            full_message += f" with shape {symbol.shape()}"
+        super().__init__(full_message)
         self.symbol = symbol
 
 
@@ -2285,17 +2292,8 @@ cdef class NaryReduce(ArraySymbol):
         operands: Collection[ArraySymbol],
         initial_values: Optional[tuple[float]] = None,
     ):
-        if len(operands) == 0:
-            raise ValueError("must have at least one operand")
-
-        if len(input_symbols) != len(operands) + 1:
-            raise ValueError("must have exactly one more input than number of operands")
-
         if initial_values is None:
             initial_values = (0,) * len(input_symbols)
-
-        if len(initial_values) != len(input_symbols):
-            raise ValueError("must have same number of initial values as inputs")
 
         cdef Model expression = input_symbols[0].model
         cdef Model model = operands[0].model
@@ -2326,12 +2324,12 @@ cdef class NaryReduce(ArraySymbol):
                 self.ptr = model._graph.emplace_node[cppNaryReduceNode](
                     move(expression._graph), cppinputs, output, cppinitial_values, cppoperands
                 )
-            except ValueError as e:
+            except _UnsupportedNaryReduceExpressionError as e:
                 raise self._handle_unsupported_expression_exception(expression, e)
 
         self.initialize_arraynode(model, self.ptr)
 
-    def _handle_unsupported_expression_exception(self, Model expression, exception: ValueError):
+    def _handle_unsupported_expression_exception(self, Model expression, exception):
         try:
             info = json.loads(str(exception))
         except json.JSONDecodeError:

@@ -20,11 +20,12 @@ from libcpp.memory cimport shared_ptr, unique_ptr
 from libcpp.vector cimport vector
 
 from dwave.optimization.libcpp.array cimport Array, span
+from dwave.optimization.libcpp.python_exception_handling cimport custom_exception_handler
 from dwave.optimization.libcpp.state cimport State
 
 cdef extern from "dwave-optimization/graph.hpp" namespace "dwave::optimization" nogil:
     cdef cppclass Graph:
-        T* emplace_node[T](...) except+
+        T* emplace_node[T](...) except+ custom_exception_handler
         void initialize_state(State&) except+
         span[const unique_ptr[Node]] nodes() const
         span[ArrayNode*] constraints() const

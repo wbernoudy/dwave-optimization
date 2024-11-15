@@ -23,6 +23,24 @@
 
 namespace dwave::optimization {
 
+// Return a simple JSON encoded string that looks like
+// {"message": ..., "node_ptr": ...}
+// (node_ptr will be ommitted if it's nullptr)
+std::string craft_error_message(const std::string& message, const Node* node_ptr) noexcept {
+    std::string message_ = R"({"message": ")" + message + "\"";
+    if (node_ptr != nullptr) {
+        message_ += R"(, "node_ptr": )" + std::to_string((uintptr_t)(void*)node_ptr);
+    }
+    message_ += "}";
+    return message_;
+}
+
+UnsupportedNaryReduceExpressionError::UnsupportedNaryReduceExpressionError(
+        const std::string message, const Node* node_ptr)
+        : node_ptr_(node_ptr), message_(craft_error_message(message, node_ptr)) {}
+
+const char* UnsupportedNaryReduceExpressionError::what() const noexcept { return message_.c_str(); }
+
 class NaryReduceNodeData : public ArrayNodeStateData {
  public:
     explicit NaryReduceNodeData(std::vector<double>&& values,
@@ -45,30 +63,26 @@ Graph validate_expression(Graph&& expression, const std::vector<InputNode*> inpu
 
     if (expression.num_decisions()) {
         // At least one decision, so the first node must be a decision
-        throw std::invalid_argument(
-                R"({"message": "Expression should not have any decision variables", "node_ptr": )" +
-                std::to_string((uintptr_t)(void*)expression.nodes()[0].get()) + "}");
+        throw UnsupportedNaryReduceExpressionError(
+                "Expression should not have any decision variables", expression.nodes()[0].get());
     }
 
     for (const auto& node_ptr : expression.nodes()) {
         const ArrayNode* array_node = dynamic_cast<const ArrayNode*>(node_ptr.get());
         if (!array_node) {
-            throw std::invalid_argument(
-                    R"({"message": "Expression should contain only array nodes", "node_ptr": )" +
-                    std::to_string((uintptr_t)(void*)node_ptr.get()) + "}");
+            throw UnsupportedNaryReduceExpressionError("Expression should contain only array nodes",
+                                                       node_ptr.get());
         }
 
         if (!is_variant<ConstantNode, MaximumNode, NegativeNode, AddNode, SubtractNode,
                         MultiplyNode>(array_node)) {
-            throw std::invalid_argument(
-                    R"({"message": "Expression contains unsupported node", "node_ptr": )" +
-                    std::to_string((uintptr_t)(void*)node_ptr.get()) + "}");
+            throw UnsupportedNaryReduceExpressionError("Expression contains unsupported node",
+                                                       node_ptr.get());
         }
 
         if (array_node->ndim() != 0) {
-            throw std::invalid_argument(
-                    R"({"message": "Expression should only contain scalars", "node_ptr": )" +
-                    std::to_string((uintptr_t)(void*)node_ptr.get()) + "}");
+            throw UnsupportedNaryReduceExpressionError("Expression should only contain scalars",
+                                                       node_ptr.get());
         }
     }
 
