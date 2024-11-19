@@ -1112,6 +1112,10 @@ class TestInput(utils.SymbolTests):
     def test_serialization(*args, **kwargs):
         pass
 
+    @unittest.skip("Input state must be explicity initialized so can't run this test")
+    def test_state_serialization(*args, **kwargs):
+        pass
+
 
 class TestIntegerVariable(utils.SymbolTests):
     def generate_symbols(self):

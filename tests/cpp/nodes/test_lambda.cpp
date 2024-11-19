@@ -15,6 +15,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dwave-optimization/graph.hpp>
 #include <dwave-optimization/nodes/collections.hpp>
+#include <dwave-optimization/nodes/constants.hpp>
 #include <dwave-optimization/nodes/flow.hpp>
 #include <dwave-optimization/nodes/lambda.hpp>
 #include <dwave-optimization/nodes/mathematical.hpp>
@@ -22,6 +23,82 @@
 #include <dwave-optimization/nodes/testing.hpp>
 
 namespace dwave::optimization {
+
+TEST_CASE("InputNode") {
+    auto graph = Graph();
+
+    GIVEN("An input node starting with state copied from a vector") {
+        auto ptr = graph.emplace_node<InputNode>(std::vector<ssize_t>{4}, 10, 50, true);
+        auto val = graph.emplace_node<ArrayValidationNode>(ptr);
+
+        THEN("It copies the values into a 1d array") {
+            CHECK(ptr->ndim() == 1);
+            CHECK(ptr->size() == 4);
+            CHECK(std::ranges::equal(ptr->shape(), std::vector{4}));
+            CHECK(std::ranges::equal(ptr->strides(), std::vector{sizeof(double)}));
+        }
+
+        THEN("min/max/integral are set from arguments") {
+            CHECK(ptr->min() == 10);
+            CHECK(ptr->max() == 50);
+            CHECK(ptr->integral());
+        }
+
+        THEN("initializing the graph state (without initializing the InputNode) throws an error") {
+            CHECK_THROWS(graph.initialize_state());
+        }
+
+        AND_GIVEN("An initialized state") {
+            std::vector<double> values = {30, 10, 40, 20};
+            auto state = graph.empty_state();
+            ptr->initialize_state(state, std::span{values});
+            graph.initialize_state(state);
+
+            THEN("The state defaults to the values from the vector") {
+                CHECK(std::ranges::equal(ptr->view(state), values));
+            }
+
+            AND_WHEN("We assign new values and propagate") {
+                std::vector<double> new_values = {20, 10, 49, 50};
+                ptr->assign(state, new_values);
+
+                ptr->propagate(state);
+                val->propagate(state);
+
+                THEN("The InputNode has the new values") {
+                    CHECK(std::ranges::equal(ptr->view(state), new_values));
+                }
+
+                THEN("We can commit") {
+                    ptr->commit(state);
+                    val->commit(state);
+                }
+
+                THEN("We can revert") {
+                    ptr->revert(state);
+                    val->revert(state);
+                }
+            }
+
+            AND_WHEN("We assign invalid values we get an exception") {
+                std::vector<double> new_values = {20, 10, 49, 51};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {9, 9, 9, 9};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {9.99, 50.01, 25, 25};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {20, 20, 20};
+                CHECK_THROWS(ptr->assign(state, new_values));
+
+                new_values = {20, 20, 20, 20, 20};
+                CHECK_THROWS(ptr->assign(state, new_values));
+            }
+        }
+    }
+}
 
 TEST_CASE("NaryReduceNode") {
     auto graph = Graph();
@@ -191,9 +268,8 @@ TEST_CASE("NaryReduceNode") {
 
         THEN("We can't create a NaryReduceNode with non-scalar nodes") {
             auto expression = Graph();
-            std::vector<double> inp_state = {0, 1};
             std::vector<InputNode*> inputs = {
-                    expression.emplace_node<InputNode>(0, 1, false, inp_state),
+                    expression.emplace_node<InputNode>(std::vector<ssize_t>{2}, 0, 1, false),
             };
             auto output_ptr = expression.emplace_node<AddNode>(
                     inputs[0],

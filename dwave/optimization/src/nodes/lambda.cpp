@@ -23,6 +23,70 @@
 
 namespace dwave::optimization {
 
+void InputNode::initialize_state(State& state, std::span<const double> data) const {
+    int index = this->topological_index();
+    assert(index >= 0 && "must be topologically sorted");
+    assert(static_cast<int>(state.size()) > index && "unexpected state length");
+    assert(state[index] == nullptr && "already initialized state");
+
+    if (static_cast<ssize_t>(data.size()) != this->size()) {
+        throw std::invalid_argument("data size does not match size of InputNode");
+    }
+
+    std::vector<double> copy(data.begin(), data.end());
+
+    state[index] = std::make_unique<ArrayNodeStateData>(std::move(copy));
+}
+
+double const* InputNode::buff(const State& state) const {
+    return data_ptr<ArrayNodeStateData>(state)->buff();
+}
+
+std::span<const Update> InputNode::diff(const State& state) const noexcept {
+    return data_ptr<ArrayNodeStateData>(state)->diff();
+}
+
+void InputNode::commit(State& state) const noexcept {
+    data_ptr<ArrayNodeStateData>(state)->commit();
+}
+
+void InputNode::revert(State& state) const noexcept {
+    data_ptr<ArrayNodeStateData>(state)->revert();
+}
+
+void InputNode::assign(State& state, std::span<const double> new_values) const {
+    if (static_cast<ssize_t>(new_values.size()) != this->size()) {
+        throw std::invalid_argument("size of new values must match");
+    }
+
+    double min_val = std::numeric_limits<double>::infinity();
+    double max_val = -std::numeric_limits<double>::infinity();
+
+    static double dummy = 0;
+    bool all_is_integral = true;
+    for (const double& v : new_values) {
+        min_val = std::min(min_val, v);
+        max_val = std::max(min_val, v);
+        all_is_integral &= (std::modf(v, &dummy) == 0.0);
+    }
+
+    if (min_val < min()) {
+        throw std::invalid_argument("new data contains a value smaller than the min");
+    }
+    if (max_val > max()) {
+        throw std::invalid_argument("new data contains a value smaller than the min");
+    }
+    if (integral() && !all_is_integral) {
+        throw std::invalid_argument("new data contains a non-integral value");
+    }
+
+    data_ptr<ArrayNodeStateData>(state)->assign(new_values);
+}
+
+void InputNode::assign(State& state, const std::vector<double>& new_values) const {
+    this->assign(state, std::span(new_values));
+}
+
 class NaryReduceNodeData : public ArrayNodeStateData {
  public:
     explicit NaryReduceNodeData(std::vector<double>&& values,
@@ -58,7 +122,7 @@ Graph validate_expression(Graph&& expression, const std::vector<InputNode*> inpu
                     std::to_string((uintptr_t)(void*)node_ptr.get()) + "}");
         }
 
-        if (!is_variant<ConstantNode, MaximumNode, NegativeNode, AddNode, SubtractNode,
+        if (!is_variant<InputNode, ConstantNode, MaximumNode, NegativeNode, AddNode, SubtractNode,
                         MultiplyNode>(array_node)) {
             throw std::invalid_argument(
                     R"({"message": "Expression contains unsupported node", "node_ptr": )" +
@@ -165,7 +229,7 @@ void NaryReduceNode::initialize_state(State& state) const {
     ssize_t num_args = operands_.size();
     std::vector<double> values;
     State reg;
-    reg = expression_.initialize_state();
+    reg = expression_.empty_state();
 
     std::vector<ArrayIterator> iterators;
     for (const ArrayNode* array_ptr : operands_) {
@@ -174,8 +238,12 @@ void NaryReduceNode::initialize_state(State& state) const {
 
     // Get the initial output of the expression
     for (ssize_t inp_index = 0; inp_index < num_args + 1; inp_index++) {
-        inputs_[inp_index]->assign(reg, std::span(initial_values_).subspan(inp_index, 1));
+        inputs_[inp_index]->initialize_state(reg, std::span(initial_values_).subspan(inp_index, 1));
     }
+
+    // Finish the initialization after the input states have been set
+    expression_.initialize_state(reg);
+
     double val = evaluate_expression(reg);
 
     // Compute the expression for each subsequent index

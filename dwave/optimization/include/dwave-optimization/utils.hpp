@@ -167,9 +167,6 @@ void deduplicate_diff(std::vector<Update>& diff);
 // Return whether the given double encodes an integer.
 bool is_integer(const double& value);
 
-// Forward declaration
-class ArrayNode;
-
 template <class T, class... Ts, class node_type>
 bool is_variant(const node_type* node_ptr) {
     // If the pointer can be dynamically cast to this type, return true

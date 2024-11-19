@@ -386,7 +386,7 @@ cdef class Model:
     def input(self, lower_bound: float, upper_bound: float, bool integral):
         """TODO"""
         from dwave.optimization.symbols import Input
-        return Input(self, lower_bound, upper_bound, integral, [0])
+        return Input(self, lower_bound, upper_bound, integral, shape=tuple())
 
     def integer(self, shape=None, lower_bound=None, upper_bound=None):
         r"""Create an integer symbol as a decision variable.

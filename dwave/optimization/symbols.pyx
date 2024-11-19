@@ -1534,27 +1534,13 @@ cdef class Input(ArraySymbol):
 
     # TODO: implement serialization
 
-    def __init__(self, Model model, array_like, lower_bound: float, upper_bound: float, integral: bool):
-        # In the future we won't need to be contiguous, but we do need to be right now
-        array = np.asarray(array_like, dtype=np.double, order="C")
-
-        # Get the shape and strides
-        cdef vector[Py_ssize_t] shape = array.shape
-        cdef vector[Py_ssize_t] strides = array.strides  # not used because contiguous for now
-
-        # Get a pointer to the first element
-        cdef double[:] flat = array.ravel()
-        cdef double* start = NULL
-        if flat.size:
-            start = &flat[0]
+    def __init__(self, Model model, lower_bound: float, upper_bound: float, integral: bool, shape: Optional[tuple] = None):
+        cdef vector[Py_ssize_t] vshape = _as_cppshape(tuple() if shape is None else shape)
 
         # Get an observing pointer to the C++ InputNode
-        self.ptr = model._graph.emplace_node[cppInputNode](lower_bound, upper_bound, integral, start, shape)
+        self.ptr = model._graph.emplace_node[cppInputNode](vshape, lower_bound, upper_bound, integral)
 
         self.initialize_arraynode(model, self.ptr)
-
-        # Have the parent model hold a reference to the array, so it's kept alive
-        model._data_sources.append(array)
 
     @staticmethod
     def _from_symbol(Symbol symbol):

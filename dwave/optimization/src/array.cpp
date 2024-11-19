@@ -164,43 +164,11 @@ std::string shape_to_string(const std::span<const ssize_t> shape) {
     return out;
 }
 
-bool array_shape_equal(const Array* lhs_ptr, const Array* rhs_ptr) {
-    auto lhs_size = lhs_ptr->sizeinfo();
-    auto rhs_size = rhs_ptr->sizeinfo();
-
-    if (lhs_size == rhs_size) return true;
-    if (lhs_size.array_ptr == nullptr || rhs_size.array_ptr == nullptr) return false;
-
-    // This first loop is redundant, but often we get diamond structures
-    // of predecessors so by going back together we might get to short circuit the
-    // dfs
-    while (lhs_size.array_ptr != lhs_ptr && rhs_size.array_ptr != rhs_ptr) {
-        lhs_ptr = lhs_size.array_ptr;
-        lhs_size = lhs_size.substitute();
-        rhs_ptr = rhs_size.array_ptr;
-        rhs_size = rhs_size.substitute();
-        if (lhs_size == rhs_size) return true;
-    }
-    while (lhs_size.array_ptr != lhs_ptr) {
-        lhs_ptr = lhs_size.array_ptr;
-        lhs_size = lhs_size.substitute();
-        if (lhs_size == rhs_size) return true;
-    }
-    while (rhs_size.array_ptr != rhs_ptr) {
-        rhs_ptr = rhs_size.array_ptr;
-        rhs_size = rhs_size.substitute();
-        if (lhs_size == rhs_size) return true;
-    }
-
-    return false;
-}
-bool array_shape_equal(const Array& lhs, const Array& rhs) {
-    return array_shape_equal(&lhs, &rhs);
-}
-
 bool array_shape_equal(const std::span<const Array* const> array_ptrs) {
     if (array_ptrs.size() == 0) {
         return false;
+    } else if (array_ptrs.size() == 1) {
+        return true;
     }
 
     const Array* first_ptr = array_ptrs[0];
@@ -231,6 +199,14 @@ bool array_shape_equal(const std::span<const Array* const> array_ptrs) {
 
 bool array_shape_equal(const std::vector<const Array*>& array_ptrs) {
     return array_shape_equal(std::span<const Array* const>{array_ptrs});
+}
+
+bool array_shape_equal(const Array* lhs_ptr, const Array* rhs_ptr) {
+    return array_shape_equal(std::array<const Array*, 2>{lhs_ptr, rhs_ptr});
+}
+
+bool array_shape_equal(const Array& lhs, const Array& rhs) {
+    return array_shape_equal(&lhs, &rhs);
 }
 
 // We follow NumPy's broadcasting rules
