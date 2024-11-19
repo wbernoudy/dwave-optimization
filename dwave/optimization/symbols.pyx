@@ -93,7 +93,8 @@ from dwave.optimization.libcpp.nodes cimport (
     WhereNode as cppWhereNode,
     XorNode as cppXorNode,
     )
-from dwave.optimization.model cimport ArraySymbol, Model, Symbol
+from dwave.optimization.model cimport ArraySymbol, _Model, Model, Symbol
+from dwave.optimization.expression cimport Expression
 
 ctypedef cppArrayNode* cppArrayNodePtr  # Cython gets confused when templating pointers
 ctypedef cppNode* cppNodePtr
@@ -174,7 +175,7 @@ cdef void _register(object cls, const type_info& typeinfo):
     _cpp_type_to_python[type_index(typeinfo)] = <PyObject*>(cls)
 
 
-cdef object symbol_from_ptr(Model model, cppNode* node_ptr):
+cdef object symbol_from_ptr(_Model model, cppNode* node_ptr):
     """Create a Python/Cython symbol from a C++ Node*."""
 
     # If it's null, either after the cast of just as given, then we can't get a symbol from it
@@ -272,7 +273,7 @@ cdef class Add(ArraySymbol):
         if lhs.model is not rhs.model:
             raise ValueError("lhs and rhs do not share the same underlying model")
 
-        cdef Model model = lhs.model
+        cdef _Model model = lhs.model
 
         self.ptr = model._graph.emplace_node[cppAddNode](lhs.array_ptr, rhs.array_ptr)
         self.initialize_arraynode(model, self.ptr)
@@ -1534,13 +1535,13 @@ cdef class Input(ArraySymbol):
 
     # TODO: implement serialization
 
-    def __init__(self, Model model, lower_bound: float, upper_bound: float, integral: bool, shape: Optional[tuple] = None):
+    def __init__(self, Expression expression, lower_bound: float, upper_bound: float, integral: bool, shape: Optional[tuple] = None):
         cdef vector[Py_ssize_t] vshape = _as_cppshape(tuple() if shape is None else shape)
 
         # Get an observing pointer to the C++ InputNode
-        self.ptr = model._graph.emplace_node[cppInputNode](vshape, lower_bound, upper_bound, integral)
+        self.ptr = expression._graph.emplace_node[cppInputNode](vshape, lower_bound, upper_bound, integral)
 
-        self.initialize_arraynode(model, self.ptr)
+        self.initialize_arraynode(expression, self.ptr)
 
     @staticmethod
     def _from_symbol(Symbol symbol):
@@ -2283,8 +2284,8 @@ cdef class NaryReduce(ArraySymbol):
         if len(initial_values) != len(input_symbols):
             raise ValueError("must have same number of initial values as inputs")
 
-        cdef Model expression = input_symbols[0].model
-        cdef Model model = operands[0].model
+        cdef _Model expression = input_symbols[0].model
+        cdef _Model model = operands[0].model
         cdef cppArrayNode* output = output_symbol.array_ptr
         cdef vector[double] cppinitial_values
         cdef vector[cppInputNode*] cppinputs
@@ -2307,17 +2308,17 @@ cdef class NaryReduce(ArraySymbol):
             array = <ArraySymbol?>node
             cppoperands.push_back(array.array_ptr)
 
-        with expression.lock():
-            try:
-                self.ptr = model._graph.emplace_node[cppNaryReduceNode](
-                    move(expression._graph), cppinputs, output, cppinitial_values, cppoperands
-                )
-            except ValueError as e:
-                raise self._handle_unsupported_expression_exception(expression, e)
+        expression.lock()
+        try:
+            self.ptr = model._graph.emplace_node[cppNaryReduceNode](
+                move(expression._graph), cppinputs, output, cppinitial_values, cppoperands
+            )
+        except ValueError as e:
+            raise self._handle_unsupported_expression_exception(expression, e)
 
         self.initialize_arraynode(model, self.ptr)
 
-    def _handle_unsupported_expression_exception(self, Model expression, exception: ValueError):
+    def _handle_unsupported_expression_exception(self, _Model expression, exception: ValueError):
         try:
             info = json.loads(str(exception))
         except json.JSONDecodeError:

@@ -34,6 +34,7 @@ from dwave.optimization import (
     logical_xor,
     mod
 )
+from dwave.optimization.expression import Expression
 
 
 class utils:
@@ -1102,9 +1103,9 @@ class TestDisjointListsVariable(utils.SymbolTests):
 
 class TestInput(utils.SymbolTests):
     def generate_symbols(self):
-        model = Model()
-        inp = model.input(-10, 10, False)
-        model.lock()
+        exp = Expression()
+        inp = exp.input(-10, 10, False)
+        exp.lock()
         yield inp
 
     # TODO: enable once implemented
@@ -1767,7 +1768,7 @@ class TestNaryReduce(utils.SymbolTests):
         c0 = model.constant([0, 0])
         c1 = model.constant([0, 1])
 
-        exp = Model()
+        exp = Expression()
         inputs = [exp.input(-10, 10, False) for _ in range(3)]
         sum_ = inputs[0] + inputs[1] + inputs[2]
 
@@ -1781,7 +1782,7 @@ class TestNaryReduce(utils.SymbolTests):
         c0 = model.constant([0, 0])
         c1 = model.constant([0, 1])
 
-        exp = Model()
+        exp = Expression()
         inputs = [exp.input(-10, 10, False) for _ in range(3)]
         sum_ = inputs[0] + inputs[1] + inputs[2]
 
@@ -1798,32 +1799,41 @@ class TestNaryReduce(utils.SymbolTests):
         model = Model()
         c0 = model.constant([0, 0])
 
-        exp = Model()
-        inputs = [exp.input(-10, 10, False) for _ in range(2)]
-        i = exp.integer()
-        sum_ = inputs[0] + inputs[1]
+        # exp = Expression()
+        # inputs = [exp.input(-10, 10, False) for _ in range(2)]
+        # i = exp.integer()
+        # sum_ = inputs[0] + inputs[1]
+        #
+        # try:
+        #     dwave.optimization.symbols.NaryReduce(inputs, sum_, (c0,))
+        #     self.assertTrue(False, "should raise exception")
+        # except Exception as e:
+        #     self.assertIsInstance(e, dwave.optimization.symbols.UnsupportedNaryReduceExpression)
+        #     self.assertRegex(str(e), "decision")
+        #     self.assertTrue(i.equals(e.symbol))
+        #
+        # exp = Expression()
+        # inputs = [exp.input(-10, 10, False) for _ in range(2)]
+        # reshape = inputs[0].reshape((1, 1, 1))
+        #
+        # try:
+        #     dwave.optimization.symbols.NaryReduce(inputs, reshape, (c0,))
+        #     self.assertTrue(False, "should raise exception")
+        # except Exception as e:
+        #     self.assertIsInstance(e, dwave.optimization.symbols.UnsupportedNaryReduceExpression)
+        #     self.assertRegex(str(e), "unsupported node")
+        #     self.assertTrue(reshape.equals(e.symbol))
 
+        exp = Expression()
+        inp1 = exp.input(-10, 10, False)
+        inp5 = exp.input(-10, 10, False, (5,))
         try:
-            dwave.optimization.symbols.NaryReduce(inputs, sum_, (c0,))
-            self.assertTrue(False, "should have raise exception")
+            dwave.optimization.symbols.NaryReduce((inp1, inp5), inp1, (c0,))
+            self.assertTrue(False, "should raise exception")
         except Exception as e:
             self.assertIsInstance(e, dwave.optimization.symbols.UnsupportedNaryReduceExpression)
-            self.assertRegex(str(e), "decision")
-            self.assertTrue(i.equals(e.symbol))
-
-        exp = Model()
-        inputs = [exp.input(-10, 10, False) for _ in range(2)]
-        reshape = inputs[0].reshape((1, 1, 1))
-
-        try:
-            dwave.optimization.symbols.NaryReduce(inputs, reshape, (c0,))
-            self.assertTrue(False, "should have raise exception")
-        except Exception as e:
-            self.assertIsInstance(e, dwave.optimization.symbols.UnsupportedNaryReduceExpression)
-            self.assertRegex(str(e), "unsupported node")
-            self.assertTrue(reshape.equals(e.symbol))
-
-        # TODO: craft example with non-scalar... not sure how to do that right now
+            self.assertRegex(str(e), "scalar")
+            self.assertTrue(inp5.equals(e.symbol))
 
     # TODO: enable once implemented
     @unittest.skip("not yet implemented")

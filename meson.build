@@ -87,6 +87,17 @@ py.extension_module(
     subdir: 'dwave/optimization/',
 )
 
+py.extension_module(
+    'expression',
+    'dwave/optimization/expression/expression.pyx',
+    dependencies: libdwave_optimization,
+    gnu_symbol_visibility: 'default',
+    install: true,
+    install_rpath: '$ORIGIN',
+    override_options : ['cython_language=cpp'],
+    subdir: 'dwave/optimization/expression/',
+)
+
 install_subdir('dwave', install_dir: py.get_install_dir(pure: false))
 
 # meson doesn't disable building tests by default, so we explicitly don't

@@ -60,88 +60,7 @@ def locked(model):
         model.unlock()
 
 
-cdef class Model:
-    """Nonlinear model.
-
-    The nonlinear model represents a general optimization problem with an
-    :term:`objective function` and/or constraints over variables of various
-    types.
-
-    The :class:`.Model` class can contain this model and its methods provide
-    convenient utilities for working with representations of a problem.
-
-    Examples:
-        This example creates a model for a
-        :class:`flow-shop-scheduling <dwave.optimization.generators.flow_shop_scheduling>`
-        problem with two jobs on three machines.
-
-        >>> from dwave.optimization.generators import flow_shop_scheduling
-        ...
-        >>> processing_times = [[10, 5, 7], [20, 10, 15]]
-        >>> model = flow_shop_scheduling(processing_times=processing_times)
-    """
-    def __init__(self):
-        self.states = States(self)
-
-        self._data_sources = []
-
-    def add_constraint(self, ArraySymbol value):
-        """Add a constraint to the model.
-
-        Args:
-            value: Value that must evaluate to True for the state
-                of the model to be feasible.
-
-        Returns:
-            The constraint symbol.
-
-        Examples:
-            This example adds a single constraint to a model.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> i = model.integer()
-            >>> c = model.constant(5)
-            >>> constraint_sym = model.add_constraint(i <= c)
-
-            The returned constraint symbol can be assigned and evaluated
-            for a model state:
-
-            >>> with model.lock():
-            ...     model.states.resize(1)
-            ...     i.set_state(0, 1) # Feasible state
-            ...     print(constraint_sym.state(0))
-            1.0
-            >>> with model.lock():
-            ...     i.set_state(0, 6) # Infeasible state
-            ...     print(constraint_sym.state(0))
-            0.0
-        """
-        if value is None:
-            raise ValueError("value cannot be None")
-        # TODO: shall we accept array valued constraints?
-        self._graph.add_constraint(value.array_ptr)
-        return value
-
-    def binary(self, shape=None):
-        r"""Create a binary symbol as a decision variable.
-
-        Args:
-            shape: Shape of the binary array to create.
-
-        Returns:
-            A binary symbol.
-
-        Examples:
-            This example creates a :math:`1 \times 20`-sized binary symbol.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> x = model.binary((1,20))
-        """
-        from dwave.optimization.symbols import BinaryVariable #avoid circular import
-        return BinaryVariable(self, shape)
-
+cdef class _Model:
     def constant(self, array_like):
         r"""Create a constant symbol.
 
@@ -163,117 +82,6 @@ cdef class Model:
         """
         from dwave.optimization.symbols import Constant  # avoid circular import
         return Constant(self, array_like)
-
-    def decision_state_size(self):
-        r"""An estimated size, in bytes, of the model's decision states.
-
-        Examples:
-            This example checks the size of a model with one
-            :math:`10 \times 10`-sized integer symbol.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> visit_site = model.integer((10, 10))
-            >>> model.decision_state_size()
-            800
-        """
-        return sum(sym.state_size() for sym in self.iter_decisions())
-
-    def disjoint_bit_sets(self, Py_ssize_t primary_set_size, Py_ssize_t num_disjoint_sets):
-        """Create a disjoint-sets symbol as a decision variable.
-
-        Divides a set of the elements of ``range(primary_set_size)`` into
-        ``num_disjoint_sets`` ordered partitions, stored as bit sets (arrays
-        of length ``primary_set_size``, with ones at the indices of elements
-        currently in the set, and zeros elsewhere). The ordering of a set is
-        not semantically meaningful.
-
-        Also creates from the symbol ``num_disjoint_sets`` extra successors
-        that output the disjoint sets as arrays.
-
-        Args:
-            primary_set_size: Number of elements in the primary set that are
-                partitioned into disjoint sets. Must be non-negative.
-            num_disjoint_sets: Number of disjoint sets. Must be positive.
-
-        Returns:
-            A tuple where the first element is the disjoint-sets symbol and
-            the second is a set of its newly added successors.
-
-        Examples:
-            This example creates a symbol of 10 elements that is divided
-            into 4 sets.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> parts_set, parts_subsets = model.disjoint_bit_sets(10, 4)
-        """
-
-        from dwave.optimization.symbols import DisjointBitSets, DisjointBitSet  # avoid circular import
-        main = DisjointBitSets(self, primary_set_size, num_disjoint_sets)
-        sets = tuple(DisjointBitSet(main, i) for i in range(num_disjoint_sets))
-        return main, sets
-
-    def disjoint_lists(self, Py_ssize_t primary_set_size, Py_ssize_t num_disjoint_lists):
-        """Create a disjoint-lists symbol as a decision variable.
-
-        Divides a set of the elements of ``range(primary_set_size)`` into
-        ``num_disjoint_lists`` ordered partitions.
-
-        Also creates ``num_disjoint_lists`` extra successors from the
-        symbol that output the disjoint lists as arrays.
-
-        Args:
-            primary_set_size: Number of elements in the primary set to
-                be partitioned into disjoint lists.
-            num_disjoint_lists: Number of disjoint lists.
-
-        Returns:
-            A tuple where the first element is the disjoint-lists symbol
-            and the second is a list of its newly added successor nodes.
-
-        Examples:
-            This example creates a symbol of 10 elements that is divided
-            into 4 lists.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> destinations, routes = model.disjoint_lists(10, 4)
-        """
-        from dwave.optimization.symbols import DisjointLists, DisjointList  # avoid circular import
-        main = DisjointLists(self, primary_set_size, num_disjoint_lists)
-        lists = [DisjointList(main, i) for i in range(num_disjoint_lists)]
-        return main, lists
-
-    def feasible(self, int index = 0):
-        """Check the feasibility of the state at the input index.
-
-        Args:
-            index: index of the state to check for feasibility.
-
-        Returns:
-            Feasibility of the state.
-
-        Examples:
-            This example demonstrates checking the feasibility of a simple model with
-            feasible and infeasible states.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> b = model.binary()
-            >>> model.add_constraint(b) # doctest: +ELLIPSIS
-            <dwave.optimization.BinaryVariable at ...>
-            >>> model.states.resize(2)
-            >>> b.set_state(0, 1) # Feasible
-            >>> b.set_state(1, 0) # Infeasible
-            >>> with model.lock():
-            ...     model.feasible(0)
-            True
-            >>> with model.lock():
-            ...     model.feasible(1)
-            False
-        """
-        return all(sym.state(index) for sym in self.iter_constraints())
 
     @classmethod
     def from_file(cls, file, *,
@@ -382,52 +190,6 @@ cdef class Model:
                     )
 
         return model
-
-    def input(self, lower_bound: float, upper_bound: float, bool integral):
-        """TODO"""
-        from dwave.optimization.symbols import Input
-        return Input(self, lower_bound, upper_bound, integral, shape=tuple())
-
-    def integer(self, shape=None, lower_bound=None, upper_bound=None):
-        r"""Create an integer symbol as a decision variable.
-
-        Args:
-            shape: Shape of the integer array to create.
-
-            lower_bound: Lower bound for the symbol, which is the
-                smallest allowed integer value. If None, the default
-                value is used.
-            upper_bound: Upper bound for the symbol, which is the
-                largest allowed integer value. If None, the default
-                value is used.
-
-        Returns:
-            An integer symbol.
-
-        Examples:
-            This example creates a :math:`20 \times 20`-sized integer symbol.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> i = model.integer((20,20), lower_bound=-100, upper_bound=100)
-        """
-        from dwave.optimization.symbols import IntegerVariable #avoid circular import
-        return IntegerVariable(self, shape, lower_bound, upper_bound)
-
-    def _header_data(self, *, only_decision, max_num_states=float('inf')):
-        """The header data associated with the model (but not the states)."""
-        num_nodes = self.num_decisions() if only_decision else self.num_nodes()
-        num_states = max(0, min(self.states.size(), max_num_states))
-
-        decision_state_size = self.decision_state_size()
-        state_size = decision_state_size if only_decision else self.state_size()
-
-        return dict(
-            decision_state_size=decision_state_size,
-            num_nodes=num_nodes,
-            state_size=state_size,
-            num_states=num_states,
-        )
 
     def into_file(self, file, *,
                   Py_ssize_t max_num_states = 0,
@@ -564,51 +326,6 @@ cdef class Model:
         """
         return self._lock_count > 0
 
-    def iter_constraints(self):
-        """Iterate over all constraints in the model.
-
-        Examples:
-            This example adds a single constraint to a model and iterates over it.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> i = model.integer()
-            >>> c = model.constant(5)
-            >>> model.add_constraint(i <= c) # doctest: +ELLIPSIS
-            <dwave.optimization.symbols.LessEqual at ...>
-            >>> constraints = next(model.iter_constraints())
-        """
-        for i in range(self._graph.num_constraints()):
-            yield symbol_from_ptr(self, self._graph.constraints()[i])
-
-    def iter_decisions(self):
-        """Iterate over all decision variables in the model.
-
-        Examples:
-            This example adds a single decision symbol to a model and iterates over it.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> i = model.integer()
-            >>> c = model.constant(5)
-            >>> model.add_constraint(i <= c) # doctest: +ELLIPSIS
-            <dwave.optimization.symbols.LessEqual at ...>
-            >>> decisions = next(model.iter_decisions())
-        """
-        cdef Py_ssize_t num_decisions = self.num_decisions()
-        cdef Py_ssize_t seen_decisions = 0
-
-        cdef Symbol symbol
-        for symbol in self.iter_symbols():
-            if 0 <= symbol.node_ptr.topological_index() < num_decisions:
-                # we found a decision!
-                yield symbol
-                seen_decisions += 1
-
-                if seen_decisions >= num_decisions:
-                    # we found them all
-                    return
-
     def iter_symbols(self):
         """Iterate over all symbols in the model.
 
@@ -623,25 +340,6 @@ cdef class Model:
         """
         for i in range(self._graph.num_nodes()):
             yield symbol_from_ptr(self, self._graph.nodes()[i].get())
-
-    def list(self, n : int):
-        """Create a list symbol as a decision variable.
-
-        Args:
-            n: Values in the list are permutations of ``range(n)``.
-
-        Returns:
-            A list symbol.
-
-        Examples:
-            This example creates a list symbol of 200 elements.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> routes = model.list(200)
-        """
-        from dwave.optimization.symbols import ListVariable  # avoid circular import
-        return ListVariable(self, n)
 
     def lock(self):
         """Lock the model.
@@ -686,77 +384,6 @@ cdef class Model:
         # We do it lazily for performance
 
         return locked(self)
-
-    def minimize(self, ArraySymbol value):
-        """Set the objective value to minimize.
-
-        Optimization problems have an objective and/or constraints. The objective
-        expresses one or more aspects of the problem that should be minimized
-        (equivalent to maximization when multiplied by a minus sign). For example,
-        an optimized itinerary might minimize the value of distance traveled or
-        cost of transportation or travel time.
-
-        Args:
-            value: Value for which to minimize the cost function.
-
-        Examples:
-            This example minimizes a simple polynomial, :math:`y = i^2 - 4i`,
-            within bounds.
-
-            >>> from dwave.optimization import Model
-            >>> model = Model()
-            >>> i = model.integer(lower_bound=-5, upper_bound=5)
-            >>> c = model.constant(4)
-            >>> y = i*i - c*i
-            >>> model.minimize(y)
-        """
-        if value is None:
-            raise ValueError("value cannot be None")
-        if value.size() < 1:
-            raise ValueError("the value of an empty array is ambiguous")
-        if value.size() > 1:
-            raise ValueError("the value of an array with more than one element is ambiguous")
-        self._graph.set_objective(value.array_ptr)
-        self.objective = value
-
-    cpdef Py_ssize_t num_constraints(self) noexcept:
-        """Number of constraints in the model.
-
-        Examples:
-            This example checks the number of constraints in the model after
-            adding a couple of constraints.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> i = model.integer()
-            >>> c = model.constant([5, -14])
-            >>> model.add_constraint(i <= c[0]) # doctest: +ELLIPSIS
-            <dwave.optimization.symbols.LessEqual at ...>
-            >>> model.add_constraint(c[1] <= i) # doctest: +ELLIPSIS
-            <dwave.optimization.symbols.LessEqual at ...>
-            >>> model.num_constraints()
-            2
-        """
-        return self._graph.num_constraints()
-
-    cpdef Py_ssize_t num_decisions(self) noexcept:
-        """Number of independent decision nodes in the model.
-
-        An array-of-integers symbol, for example, counts as a single
-        decision node.
-
-        Examples:
-            This example checks the number of decisions in a model after
-            adding a single (size 20) decision symbol.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> c = model.constant([1, 5, 8.4])
-            >>> i = model.integer(20, upper_bound=100)
-            >>> model.num_decisions()
-            1
-        """
-        return self._graph.num_decisions()
 
     def num_edges(self):
         """Number of edges in the directed acyclic graph for the model.
@@ -822,32 +449,6 @@ cdef class Model:
         """
         return self.num_nodes()
 
-    def quadratic_model(self, ArraySymbol x, quadratic, linear=None):
-        """Create a quadratic model from an array and a quadratic model.
-
-        Args:
-            x: An array.
-
-            quadratic: Quadratic values for the quadratic model.
-
-            linear: Linear values for the quadratic model.
-
-        Returns:
-            A quadratic model.
-
-        Examples:
-            This example creates a quadratic model.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> x = model.binary(3)
-            >>> Q = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (1, 1): 1, (1, 2): 3, (2, 2): 2}
-            >>> qm = model.quadratic_model(x, Q)
-
-        """
-        from dwave.optimization.symbols import QuadraticModel
-        return QuadraticModel(x, quadratic, linear)
-
     def remove_unused_symbols(self):
         """Remove unused symbols from the model.
 
@@ -900,28 +501,6 @@ cdef class Model:
         if self.is_locked():
             raise ValueError("cannot remove symbols from a locked model")
         return self._graph.remove_unused_nodes()
-
-    def set(self, Py_ssize_t n, Py_ssize_t min_size = 0, max_size = None):
-        """Create a set symbol as a decision variable.
-
-        Args:
-            n: Values in the set are subsets of ``range(n)``.
-            min_size: Minimum set size. Defaults to ``0``.
-            max_size: Maximum set size. Defaults to ``n``.
-
-        Returns:
-            A set symbol.
-
-        Examples:
-            This example creates a set symbol of up to 4 elements
-            with values between 0 to 99.
-
-            >>> from dwave.optimization.model import Model
-            >>> model = Model()
-            >>> destinations = model.set(100, max_size=4)
-        """
-        from dwave.optimization.symbols import SetVariable  # avoid circular import
-        return SetVariable(self, n, min_size, n if max_size is None else max_size)
 
     def state_size(self):
         """An estimate of the size, in bytes, of all states in the model.
@@ -1043,6 +622,424 @@ cdef class Model:
                 # this might actually increase the size of the states in some
                 # cases, but that's fine
                 self.states._states[i].resize(self.num_decisions())
+
+
+cdef class Model(_Model):
+    """Nonlinear model.
+
+    The nonlinear model represents a general optimization problem with an
+    :term:`objective function` and/or constraints over variables of various
+    types.
+
+    The :class:`.Model` class can contain this model and its methods provide
+    convenient utilities for working with representations of a problem.
+
+    Examples:
+        This example creates a model for a
+        :class:`flow-shop-scheduling <dwave.optimization.generators.flow_shop_scheduling>`
+        problem with two jobs on three machines.
+
+        >>> from dwave.optimization.generators import flow_shop_scheduling
+        ...
+        >>> processing_times = [[10, 5, 7], [20, 10, 15]]
+        >>> model = flow_shop_scheduling(processing_times=processing_times)
+    """
+    def __init__(self):
+        self.states = States(self)
+
+        self._data_sources = []
+
+    def add_constraint(self, ArraySymbol value):
+        """Add a constraint to the model.
+
+        Args:
+            value: Value that must evaluate to True for the state
+                of the model to be feasible.
+
+        Returns:
+            The constraint symbol.
+
+        Examples:
+            This example adds a single constraint to a model.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> i = model.integer()
+            >>> c = model.constant(5)
+            >>> constraint_sym = model.add_constraint(i <= c)
+
+            The returned constraint symbol can be assigned and evaluated
+            for a model state:
+
+            >>> with model.lock():
+            ...     model.states.resize(1)
+            ...     i.set_state(0, 1) # Feasible state
+            ...     print(constraint_sym.state(0))
+            1.0
+            >>> with model.lock():
+            ...     i.set_state(0, 6) # Infeasible state
+            ...     print(constraint_sym.state(0))
+            0.0
+        """
+        if value is None:
+            raise ValueError("value cannot be None")
+        # TODO: shall we accept array valued constraints?
+        self._graph.add_constraint(value.array_ptr)
+        return value
+
+    def binary(self, shape=None):
+        r"""Create a binary symbol as a decision variable.
+
+        Args:
+            shape: Shape of the binary array to create.
+
+        Returns:
+            A binary symbol.
+
+        Examples:
+            This example creates a :math:`1 \times 20`-sized binary symbol.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> x = model.binary((1,20))
+        """
+        from dwave.optimization.symbols import BinaryVariable #avoid circular import
+        return BinaryVariable(self, shape)
+
+    def decision_state_size(self):
+        r"""An estimated size, in bytes, of the model's decision states.
+
+        Examples:
+            This example checks the size of a model with one
+            :math:`10 \times 10`-sized integer symbol.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> visit_site = model.integer((10, 10))
+            >>> model.decision_state_size()
+            800
+        """
+        return sum(sym.state_size() for sym in self.iter_decisions())
+
+    def disjoint_bit_sets(self, Py_ssize_t primary_set_size, Py_ssize_t num_disjoint_sets):
+        """Create a disjoint-sets symbol as a decision variable.
+
+        Divides a set of the elements of ``range(primary_set_size)`` into
+        ``num_disjoint_sets`` ordered partitions, stored as bit sets (arrays
+        of length ``primary_set_size``, with ones at the indices of elements
+        currently in the set, and zeros elsewhere). The ordering of a set is
+        not semantically meaningful.
+
+        Also creates from the symbol ``num_disjoint_sets`` extra successors
+        that output the disjoint sets as arrays.
+
+        Args:
+            primary_set_size: Number of elements in the primary set that are
+                partitioned into disjoint sets. Must be non-negative.
+            num_disjoint_sets: Number of disjoint sets. Must be positive.
+
+        Returns:
+            A tuple where the first element is the disjoint-sets symbol and
+            the second is a set of its newly added successors.
+
+        Examples:
+            This example creates a symbol of 10 elements that is divided
+            into 4 sets.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> parts_set, parts_subsets = model.disjoint_bit_sets(10, 4)
+        """
+
+        from dwave.optimization.symbols import DisjointBitSets, DisjointBitSet  # avoid circular import
+        main = DisjointBitSets(self, primary_set_size, num_disjoint_sets)
+        sets = tuple(DisjointBitSet(main, i) for i in range(num_disjoint_sets))
+        return main, sets
+
+    def disjoint_lists(self, Py_ssize_t primary_set_size, Py_ssize_t num_disjoint_lists):
+        """Create a disjoint-lists symbol as a decision variable.
+
+        Divides a set of the elements of ``range(primary_set_size)`` into
+        ``num_disjoint_lists`` ordered partitions.
+
+        Also creates ``num_disjoint_lists`` extra successors from the
+        symbol that output the disjoint lists as arrays.
+
+        Args:
+            primary_set_size: Number of elements in the primary set to
+                be partitioned into disjoint lists.
+            num_disjoint_lists: Number of disjoint lists.
+
+        Returns:
+            A tuple where the first element is the disjoint-lists symbol
+            and the second is a list of its newly added successor nodes.
+
+        Examples:
+            This example creates a symbol of 10 elements that is divided
+            into 4 lists.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> destinations, routes = model.disjoint_lists(10, 4)
+        """
+        from dwave.optimization.symbols import DisjointLists, DisjointList  # avoid circular import
+        main = DisjointLists(self, primary_set_size, num_disjoint_lists)
+        lists = [DisjointList(main, i) for i in range(num_disjoint_lists)]
+        return main, lists
+
+    def feasible(self, int index = 0):
+        """Check the feasibility of the state at the input index.
+
+        Args:
+            index: index of the state to check for feasibility.
+
+        Returns:
+            Feasibility of the state.
+
+        Examples:
+            This example demonstrates checking the feasibility of a simple model with
+            feasible and infeasible states.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> b = model.binary()
+            >>> model.add_constraint(b) # doctest: +ELLIPSIS
+            <dwave.optimization.BinaryVariable at ...>
+            >>> model.states.resize(2)
+            >>> b.set_state(0, 1) # Feasible
+            >>> b.set_state(1, 0) # Infeasible
+            >>> with model.lock():
+            ...     model.feasible(0)
+            True
+            >>> with model.lock():
+            ...     model.feasible(1)
+            False
+        """
+        return all(sym.state(index) for sym in self.iter_constraints())
+
+    def integer(self, shape=None, lower_bound=None, upper_bound=None):
+        r"""Create an integer symbol as a decision variable.
+
+        Args:
+            shape: Shape of the integer array to create.
+
+            lower_bound: Lower bound for the symbol, which is the
+                smallest allowed integer value. If None, the default
+                value is used.
+            upper_bound: Upper bound for the symbol, which is the
+                largest allowed integer value. If None, the default
+                value is used.
+
+        Returns:
+            An integer symbol.
+
+        Examples:
+            This example creates a :math:`20 \times 20`-sized integer symbol.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> i = model.integer((20,20), lower_bound=-100, upper_bound=100)
+        """
+        from dwave.optimization.symbols import IntegerVariable #avoid circular import
+        return IntegerVariable(self, shape, lower_bound, upper_bound)
+
+    def _header_data(self, *, only_decision, max_num_states=float('inf')):
+        """The header data associated with the model (but not the states)."""
+        num_nodes = self.num_decisions() if only_decision else self.num_nodes()
+        num_states = max(0, min(self.states.size(), max_num_states))
+
+        decision_state_size = self.decision_state_size()
+        state_size = decision_state_size if only_decision else self.state_size()
+
+        return dict(
+            decision_state_size=decision_state_size,
+            num_nodes=num_nodes,
+            state_size=state_size,
+            num_states=num_states,
+        )
+
+    def iter_constraints(self):
+        """Iterate over all constraints in the model.
+
+        Examples:
+            This example adds a single constraint to a model and iterates over it.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> i = model.integer()
+            >>> c = model.constant(5)
+            >>> model.add_constraint(i <= c) # doctest: +ELLIPSIS
+            <dwave.optimization.symbols.LessEqual at ...>
+            >>> constraints = next(model.iter_constraints())
+        """
+        for i in range(self._graph.num_constraints()):
+            yield symbol_from_ptr(self, self._graph.constraints()[i])
+
+    def iter_decisions(self):
+        """Iterate over all decision variables in the model.
+
+        Examples:
+            This example adds a single decision symbol to a model and iterates over it.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> i = model.integer()
+            >>> c = model.constant(5)
+            >>> model.add_constraint(i <= c) # doctest: +ELLIPSIS
+            <dwave.optimization.symbols.LessEqual at ...>
+            >>> decisions = next(model.iter_decisions())
+        """
+        cdef Py_ssize_t num_decisions = self.num_decisions()
+        cdef Py_ssize_t seen_decisions = 0
+
+        cdef Symbol symbol
+        for symbol in self.iter_symbols():
+            if 0 <= symbol.node_ptr.topological_index() < num_decisions:
+                # we found a decision!
+                yield symbol
+                seen_decisions += 1
+
+                if seen_decisions >= num_decisions:
+                    # we found them all
+                    return
+
+    def list(self, n : int):
+        """Create a list symbol as a decision variable.
+
+        Args:
+            n: Values in the list are permutations of ``range(n)``.
+
+        Returns:
+            A list symbol.
+
+        Examples:
+            This example creates a list symbol of 200 elements.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> routes = model.list(200)
+        """
+        from dwave.optimization.symbols import ListVariable  # avoid circular import
+        return ListVariable(self, n)
+
+    def minimize(self, ArraySymbol value):
+        """Set the objective value to minimize.
+
+        Optimization problems have an objective and/or constraints. The objective
+        expresses one or more aspects of the problem that should be minimized
+        (equivalent to maximization when multiplied by a minus sign). For example,
+        an optimized itinerary might minimize the value of distance traveled or
+        cost of transportation or travel time.
+
+        Args:
+            value: Value for which to minimize the cost function.
+
+        Examples:
+            This example minimizes a simple polynomial, :math:`y = i^2 - 4i`,
+            within bounds.
+
+            >>> from dwave.optimization import Model
+            >>> model = Model()
+            >>> i = model.integer(lower_bound=-5, upper_bound=5)
+            >>> c = model.constant(4)
+            >>> y = i*i - c*i
+            >>> model.minimize(y)
+        """
+        if value is None:
+            raise ValueError("value cannot be None")
+        if value.size() < 1:
+            raise ValueError("the value of an empty array is ambiguous")
+        if value.size() > 1:
+            raise ValueError("the value of an array with more than one element is ambiguous")
+        self._graph.set_objective(value.array_ptr)
+        self.objective = value
+
+    cpdef Py_ssize_t num_constraints(self) noexcept:
+        """Number of constraints in the model.
+
+        Examples:
+            This example checks the number of constraints in the model after
+            adding a couple of constraints.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> i = model.integer()
+            >>> c = model.constant([5, -14])
+            >>> model.add_constraint(i <= c[0]) # doctest: +ELLIPSIS
+            <dwave.optimization.symbols.LessEqual at ...>
+            >>> model.add_constraint(c[1] <= i) # doctest: +ELLIPSIS
+            <dwave.optimization.symbols.LessEqual at ...>
+            >>> model.num_constraints()
+            2
+        """
+        return self._graph.num_constraints()
+
+    cpdef Py_ssize_t num_decisions(self) noexcept:
+        """Number of independent decision nodes in the model.
+
+        An array-of-integers symbol, for example, counts as a single
+        decision node.
+
+        Examples:
+            This example checks the number of decisions in a model after
+            adding a single (size 20) decision symbol.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> c = model.constant([1, 5, 8.4])
+            >>> i = model.integer(20, upper_bound=100)
+            >>> model.num_decisions()
+            1
+        """
+        return self._graph.num_decisions()
+
+    def quadratic_model(self, ArraySymbol x, quadratic, linear=None):
+        """Create a quadratic model from an array and a quadratic model.
+
+        Args:
+            x: An array.
+
+            quadratic: Quadratic values for the quadratic model.
+
+            linear: Linear values for the quadratic model.
+
+        Returns:
+            A quadratic model.
+
+        Examples:
+            This example creates a quadratic model.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> x = model.binary(3)
+            >>> Q = {(0, 0): 0, (0, 1): 1, (0, 2): 2, (1, 1): 1, (1, 2): 3, (2, 2): 2}
+            >>> qm = model.quadratic_model(x, Q)
+
+        """
+        from dwave.optimization.symbols import QuadraticModel
+        return QuadraticModel(x, quadratic, linear)
+
+    def set(self, Py_ssize_t n, Py_ssize_t min_size = 0, max_size = None):
+        """Create a set symbol as a decision variable.
+
+        Args:
+            n: Values in the set are subsets of ``range(n)``.
+            min_size: Minimum set size. Defaults to ``0``.
+            max_size: Maximum set size. Defaults to ``n``.
+
+        Returns:
+            A set symbol.
+
+        Examples:
+            This example creates a set symbol of up to 4 elements
+            with values between 0 to 99.
+
+            >>> from dwave.optimization.model import Model
+            >>> model = Model()
+            >>> destinations = model.set(100, max_size=4)
+        """
+        from dwave.optimization.symbols import SetVariable  # avoid circular import
+        return SetVariable(self, n, min_size, n if max_size is None else max_size)
 
 
 cdef class States:
@@ -1234,7 +1231,7 @@ cdef class States:
         return self._model().into_file(file, only_decision=True, max_num_states=self.size())
 
 
-    cdef Model _model(self):
+    cdef _Model _model(self):
         """Get a ref-counted Model object."""
         cdef Model m = self._model_ref()
         if m is None:
@@ -1330,7 +1327,7 @@ cdef class Symbol:
         cls = type(self)
         return f"<{cls.__module__}.{cls.__qualname__} at {self.id():#x}>"
 
-    cdef void initialize_node(self, Model model, cppNode* node_ptr) noexcept:
+    cdef void initialize_node(self, _Model model, cppNode* node_ptr) noexcept:
         self.model = model
 
         self.node_ptr = node_ptr
@@ -1762,7 +1759,7 @@ cdef class ArraySymbol(Symbol):
         # via their subclasses.
         raise ValueError("ArraySymbols cannot be constructed directly")
 
-    cdef void initialize_arraynode(self, Model model, cppArrayNode* array_ptr) noexcept:
+    cdef void initialize_arraynode(self, _Model model, cppArrayNode* array_ptr) noexcept:
         self.array_ptr = array_ptr
         self.initialize_node(model, array_ptr)
 

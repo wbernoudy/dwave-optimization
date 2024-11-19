@@ -14,12 +14,11 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-from libcpp.typeinfo cimport type_info
+from dwave.optimization.model cimport ArraySymbol, _Model
 
-from dwave.optimization.model cimport _Model
-from dwave.optimization.libcpp.graph cimport Array as cppArray
-from dwave.optimization.libcpp.graph cimport Node as cppNode
 
-cdef void _register(object cls, const type_info& typeinfo)
+__all__ = ["Expression"]
 
-cdef object symbol_from_ptr(_Model model, cppNode* ptr)
+
+cdef class Expression(_Model):
+    cdef readonly ArraySymbol output

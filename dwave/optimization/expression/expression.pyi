@@ -1,5 +1,3 @@
-# distutils: language = c++
-
 # Copyright 2024 D-Wave Systems Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,12 +12,20 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-from libcpp.typeinfo cimport type_info
+from typing import Optional
 
-from dwave.optimization.model cimport _Model
-from dwave.optimization.libcpp.graph cimport Array as cppArray
-from dwave.optimization.libcpp.graph cimport Node as cppNode
+from dwave.optimization.model import _Model
 
-cdef void _register(object cls, const type_info& typeinfo)
 
-cdef object symbol_from_ptr(_Model model, cppNode* ptr)
+_ShapeLike: typing.TypeAlias = typing.Union[int, collections.abc.Sequence[int]]
+
+
+class Expression(_Model):
+    def __init__(self): ...
+
+    def input(self, lower_bound: float, upper_bound: float, integral: bool, shape: Optional[tuple] = None):
+
+    @property
+    def output(self) -> ArraySymbol: ...
+
+    def set_output(self, value: ArraySymbol): ...

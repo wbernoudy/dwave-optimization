@@ -26,12 +26,10 @@ from dwave.optimization.libcpp.state cimport State as cppState
 __all__ = ["Model"]
 
 
-cdef class Model:
+cdef class _Model:
     cpdef bool is_locked(self) noexcept
-    cpdef Py_ssize_t num_decisions(self) noexcept
     cpdef Py_ssize_t num_nodes(self) noexcept
-    cpdef Py_ssize_t num_constraints(self) noexcept
-    
+
     # Allow dynamic attributes on the Model class
     cdef dict __dict__
 
@@ -39,6 +37,31 @@ cdef class Model:
     cdef object __weakref__
 
     cdef cppGraph _graph
+
+    cdef readonly States states
+    """States of the model.
+
+    :ref:`States <intro_optimization_states>` represent assignments of values
+    to a symbol.
+
+    See also:
+        :ref:`States methods <optimization_models>` such as 
+        :meth:`~dwave.optimization.model.States.size` and 
+        :meth:`~dwave.optimization.model.States.resize`.
+    """
+
+    # The number of times "lock()" has been called.
+    cdef readonly Py_ssize_t _lock_count
+
+    # Used to keep NumPy arrays that own data alive etc etc
+    # We could pair each of these with an expired_ptr for the node holding
+    # memory for easier cleanup later if that becomes a concern.
+    cdef object _data_sources
+
+
+cdef class Model(_Model):
+    cpdef Py_ssize_t num_constraints(self) noexcept
+    cpdef Py_ssize_t num_decisions(self) noexcept
 
     cdef readonly object objective  # todo: cdef ArraySymbol?
     """Objective to be minimized.
@@ -62,26 +85,6 @@ cdef class Model:
         Objective = -4.0
     """
 
-    cdef readonly States states
-    """States of the model.
-
-    :ref:`States <intro_optimization_states>` represent assignments of values
-    to a symbol.
-
-    See also:
-        :ref:`States methods <optimization_models>` such as 
-        :meth:`~dwave.optimization.model.States.size` and 
-        :meth:`~dwave.optimization.model.States.resize`.
-    """
-
-    # The number of times "lock()" has been called.
-    cdef readonly Py_ssize_t _lock_count
-
-    # Used to keep NumPy arrays that own data alive etc etc
-    # We could pair each of these with an expired_ptr for the node holding
-    # memory for easier cleanup later if that becomes a concern.
-    cdef object _data_sources
-
 
 cdef class States:
     """The states/solutions of the model."""
@@ -91,7 +94,7 @@ cdef class States:
     cpdef resolve(self)
     cpdef Py_ssize_t size(self) except -1
 
-    cdef Model _model(self)
+    cdef _Model _model(self)
 
     # In order to not create a circular reference, we only hold a weakref
     # to the model from the states. This introduces some overhead, but it
@@ -114,7 +117,7 @@ cdef class States:
 
 cdef class Symbol:
     # Inheriting nodes must call this method from their __init__()
-    cdef void initialize_node(self, Model model, cppNode* node_ptr) noexcept
+    cdef void initialize_node(self, _Model model, cppNode* node_ptr) noexcept
 
     cpdef uintptr_t id(self) noexcept
 
@@ -122,12 +125,12 @@ cdef class Symbol:
     cpdef bool expired(self) noexcept
 
     @staticmethod
-    cdef Symbol from_ptr(Model model, cppNode* ptr)
+    cdef Symbol from_ptr(_Model model, cppNode* ptr)
 
     # Hold on to a reference to the Model, both for access but also, importantly,
     # to ensure that the model doesn't get garbage collected unless all of
     # the observers have also been garbage collected.
-    cdef readonly Model model
+    cdef readonly _Model model
 
     # Hold Node* pointer. This is redundant as most observers will also hold
     # a pointer to their observed node with the correct type. But the cost
@@ -145,7 +148,7 @@ cdef class Symbol:
 # also Symbols (probably a fair assumption)
 cdef class ArraySymbol(Symbol):
     # Inheriting symbols must call this method from their __init__()
-    cdef void initialize_arraynode(self, Model model, cppArrayNode* array_ptr) noexcept
+    cdef void initialize_arraynode(self, _Model model, cppArrayNode* array_ptr) noexcept
 
     # Hold ArrayNode* pointer. Again this is redundant, because we're also holding
     # a pointer to Node* and we can theoretically dynamic cast each time.
