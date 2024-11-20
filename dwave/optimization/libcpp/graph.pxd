@@ -22,15 +22,23 @@ from libcpp.vector cimport vector
 from dwave.optimization.libcpp.array cimport Array, span
 from dwave.optimization.libcpp.state cimport State
 
+
+# This seems to be necessary to allow Cython to iterate over the returned
+# span from `inputs()` directly. Otherwise it tries to cast it to a non-const
+# version of span before iterating, which the C++ compiler will complain about.
+ctypedef InputNode* const constInputNodePtr
+
+
 cdef extern from "dwave-optimization/graph.hpp" namespace "dwave::optimization" nogil:
     cdef cppclass Graph:
         T* emplace_node[T](...) except+
         void initialize_state(State&) except+
         span[const unique_ptr[Node]] nodes() const
         span[ArrayNode*] constraints() const
+        Py_ssize_t num_constraints()
         Py_ssize_t num_nodes()
         Py_ssize_t num_decisions()
-        Py_ssize_t num_constraints()
+        Py_ssize_t num_inputs()
         @staticmethod
         void recursive_initialize(State&, Node*) except+
         @staticmethod
@@ -41,6 +49,7 @@ cdef extern from "dwave-optimization/graph.hpp" namespace "dwave::optimization" 
         void topological_sort()
         bool topologically_sorted() const
         Py_ssize_t remove_unused_nodes()
+        span[constInputNodePtr] inputs()
 
     cdef cppclass Node:
         struct SuccessorView:
@@ -51,4 +60,7 @@ cdef extern from "dwave-optimization/graph.hpp" namespace "dwave::optimization" 
         Py_ssize_t topological_index()
 
     cdef cppclass ArrayNode(Node, Array):
+        pass
+
+    cdef cppclass InputNode(Node, Array):
         pass

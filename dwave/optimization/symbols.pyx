@@ -99,6 +99,11 @@ from dwave.optimization.expression cimport Expression
 ctypedef cppArrayNode* cppArrayNodePtr  # Cython gets confused when templating pointers
 ctypedef cppNode* cppNodePtr
 
+ctypedef fused ExpressionOrModel:
+    Model
+    Expression
+
+
 __all__ = [
     "Absolute",
     "Add",
@@ -175,6 +180,7 @@ cdef void _register(object cls, const type_info& typeinfo):
     _cpp_type_to_python[type_index(typeinfo)] = <PyObject*>(cls)
 
 
+# TODO: should this use ExpressionOrModel?
 cdef object symbol_from_ptr(_Model model, cppNode* node_ptr):
     """Create a Python/Cython symbol from a C++ Node*."""
 
@@ -2267,39 +2273,36 @@ cdef class NaryReduce(ArraySymbol):
 
     def __init__(
         self,
-        input_symbols: Collection[Input],
-        ArraySymbol output_symbol,
+        # input_symbols: Collection[Input],
+        # ArraySymbol output_symbol,
+        expression: Expression,
         operands: Collection[ArraySymbol],
         initial_values: Optional[tuple[float]] = None,
     ):
         if len(operands) == 0:
             raise ValueError("must have at least one operand")
 
-        if len(input_symbols) != len(operands) + 1:
+        if expression.num_inputs() != len(operands) + 1:
             raise ValueError("must have exactly one more input than number of operands")
 
         if initial_values is None:
-            initial_values = (0,) * len(input_symbols)
+            initial_values = (0,) * expression.num_inputs()
 
-        if len(initial_values) != len(input_symbols):
+        if len(initial_values) != expression.num_inputs():
             raise ValueError("must have same number of initial values as inputs")
 
-        cdef _Model expression = input_symbols[0].model
-        cdef _Model model = operands[0].model
-        cdef cppArrayNode* output = output_symbol.array_ptr
+        cdef Model model = operands[0].model
+        cdef cppArrayNode* output = expression.output.array_ptr
         cdef vector[double] cppinitial_values
+        cdef cppInputNode* cppinput
         cdef vector[cppInputNode*] cppinputs
         cdef vector[cppArrayNode*] cppoperands
 
         for val in initial_values:
             cppinitial_values.push_back(val)
 
-        cdef Input inp
-        for node in input_symbols:
-            if node.model != expression:
-                raise ValueError("all inputs must belong to the expression model")
-            inp = <Input?>node
-            cppinputs.push_back(inp.ptr)
+        for cppinput in expression._graph.inputs():
+            cppinputs.push_back(cppinput)
 
         cdef ArraySymbol array
         for node in operands:
@@ -2314,11 +2317,12 @@ cdef class NaryReduce(ArraySymbol):
                 move(expression._graph), cppinputs, output, cppinitial_values, cppoperands
             )
         except ValueError as e:
+            expression.unlock()
             raise self._handle_unsupported_expression_exception(expression, e)
 
         self.initialize_arraynode(model, self.ptr)
 
-    def _handle_unsupported_expression_exception(self, _Model expression, exception: ValueError):
+    def _handle_unsupported_expression_exception(self, Expression expression, exception):
         try:
             info = json.loads(str(exception))
         except json.JSONDecodeError:

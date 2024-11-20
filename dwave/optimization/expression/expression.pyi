@@ -21,7 +21,13 @@ _ShapeLike: typing.TypeAlias = typing.Union[int, collections.abc.Sequence[int]]
 
 
 class Expression(_Model):
-    def __init__(self): ...
+    def __init__(
+        self,
+        num_inputs: int = 0,
+        lower_bound: Optional[float] = None,
+        upper_bound: Optional[float] = None,
+        integral: Optional[bool] = None,
+    ): ...
 
     def input(self, lower_bound: float, upper_bound: float, integral: bool, shape: Optional[tuple] = None):
 

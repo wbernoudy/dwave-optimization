@@ -46,9 +46,15 @@ from libcpp.vector cimport vector
 
 from dwave.optimization.libcpp.array cimport Array as cppArray
 from dwave.optimization.symbols cimport symbol_from_ptr
+from dwave.optimization.expression cimport Expression
 
 
 __all__ = ["Model"]
+
+
+ctypedef fused ExpressionOrModel:
+    Model
+    Expression
 
 
 @contextlib.contextmanager
@@ -1042,6 +1048,10 @@ cdef class Model(_Model):
         return SetVariable(self, n, min_size, n if max_size is None else max_size)
 
 
+def _States_init(States self, ExpressionOrModel model):
+    self._model_ref = weakref.ref(model)
+
+
 cdef class States:
     r"""States of a symbol in a model.
 
@@ -1094,8 +1104,12 @@ cdef class States:
         >>> model.states.size()
         0
     """
-    def __init__(self, Model model):
-        self._model_ref = weakref.ref(model)
+
+    # Cython doesn't seem to properly handle fused type arguments on __init__,
+    # so we have to use this awkward workaround
+    # See https://github.com/cython/cython/issues/3758
+    def __init__(self, model):
+        _States_init(self, model)
 
     def __len__(self):
         """The number of model states."""

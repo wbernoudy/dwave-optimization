@@ -22,3 +22,5 @@ __all__ = ["Expression"]
 
 cdef class Expression(_Model):
     cdef readonly ArraySymbol output
+
+    cpdef Py_ssize_t num_inputs(self) noexcept
