@@ -20,6 +20,9 @@ from dwave.optimization.libcpp.array cimport Array as cppArray
 from dwave.optimization.model cimport ArraySymbol, _Graph
 from dwave.optimization.model import Model
 
+
+from dwave.optimization.libcpp.simplex cimport linprog as cpplinprog, SolveResult, span
+
 __all__ = ["States"]
 
 
@@ -337,3 +340,44 @@ cdef class StateView:
 
     cdef readonly Py_ssize_t index  # which state we're accessing
     cdef readonly ArraySymbol symbol
+
+
+ctypedef const double const_double
+
+cdef const double* get_pointer1d(const double[::1] mv):
+    if mv.size:
+        return &mv[0]
+    else:
+        return NULL
+
+
+cdef const double* get_pointer2d(const double[:, ::1] mv):
+    if mv.size:
+        return &mv[0, 0]
+    else:
+        return NULL
+
+
+def linprog(const double[::1] c, const double[::1] b_lb,
+            const double[:, ::1] A, const double[::1] b_ub,
+            const double[:, ::1] A_eq, const double[::1] b_eq,
+            const double[::1] lb, const double[::1] ub):
+
+    cdef span[const_double] c_span = span[const_double](get_pointer1d(c), c.size)
+    cdef span[const_double] b_lb_span = span[const_double](get_pointer1d(b_lb), b_lb.size)
+    cdef span[const_double] A_span = span[const_double](get_pointer2d(A), A.size)
+    cdef span[const_double] b_ub_span = span[const_double](get_pointer1d(b_ub), b_ub.size)
+    cdef span[const_double] A_eq_span = span[const_double](get_pointer2d(A_eq), A_eq.size)
+    cdef span[const_double] b_eq_span = span[const_double](get_pointer1d(b_eq), b_eq.size)
+    cdef span[const_double] lb_span = span[const_double](get_pointer1d(lb), lb.size)
+    cdef span[const_double] ub_span = span[const_double](get_pointer1d(ub), ub.size)
+
+    cdef SolveResult result = cpplinprog(c_span, b_lb_span, A_span, b_ub_span, A_eq_span, b_eq_span, lb_span, ub_span)
+    return dict(
+        solution=result.solution(),
+        solve_status=result.solve_status,
+        num_iterations=result.num_iterations,
+        objective=result.objective(),
+        solution_status=result.solution_status(),
+        feasible=result.feasible(),
+    )
