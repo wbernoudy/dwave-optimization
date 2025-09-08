@@ -15,6 +15,7 @@
 #include "dwave-optimization/nodes/sorting.hpp"
 
 #include <set>
+#include <vector>
 
 #include "_state.hpp"
 
@@ -25,8 +26,10 @@ namespace dwave::optimization {
 struct ArgSortNodeDataHelper_ {
     ArgSortNodeDataHelper_(std::vector<double> values) {
         for (ssize_t index = 0, stop = values.size(); index < stop; index++) {
-            order.emplace(values[index], index);
+            order.emplace_back(values[index], index);
         }
+
+        std::sort(order.begin(), order.end());
 
         for (const auto& [_, index] : order) {
             indices.push_back(index);
@@ -34,7 +37,8 @@ struct ArgSortNodeDataHelper_ {
     }
 
     std::vector<double> indices;
-    std::set<std::pair<double, ssize_t>> order;
+    // std::set<std::pair<double, ssize_t>> order;
+    std::vector<std::pair<double, ssize_t>> order;
 };
 
 struct ArgSortNodeData : public ArrayNodeStateData {
@@ -43,9 +47,64 @@ struct ArgSortNodeData : public ArrayNodeStateData {
     ArgSortNodeData(ArgSortNodeDataHelper_&& helper)
             : ArrayNodeStateData(std::move(helper.indices)), order(std::move(helper.order)) {}
 
+    void sort() {
+        std::sort(order.begin(), order.end());
+
+        // print_order();
+
+        mark.resize(order.size());
+
+        const auto obegin = order.begin();
+        const auto oend = order.end();
+        for (auto it = obegin, previous = oend; it != oend; previous = it, ++it) {
+            if (previous == oend) continue;
+
+            auto idx = std::distance(obegin, previous);
+            if (*it == *previous && !mark[idx]) {
+                mark[idx] = true;
+                mark[idx + 1] = true;
+            }
+        }
+
+        // print_mark();
+
+        std::erase_if(order, [this](const std::pair<double, ssize_t>& o) {
+            // std::cout << "&o=" << &o << "\n";
+            // std::cout << "&order being=" << &*this->order.begin() << "\n";
+            auto idx = &o - &*this->order.begin();
+            bool m = this->mark[idx];
+            // if (m) {
+            //     std::cout << "erasing index: " << idx << "\n";
+            // }
+            this->mark[idx] = false;
+            return m;
+        });
+
+        // print_order();
+        // print_mark();
+    }
+
+    void print_order() {
+        std::cout << "order: ";
+        for (const auto& o : order) {
+            std::cout << "(" << o.first << ", " << o.second << "), ";
+        }
+        std::cout << "\n";
+    }
+
+    void print_mark() {
+        std::cout << "mark: ";
+        for (const auto& m : mark) {
+            std::cout << (m ? "1" : "0") << ", ";
+        }
+        std::cout << "\n";
+    }
+
     /// Pairs are <value in the original array, index of the value>
-    std::set<std::pair<double, ssize_t>> order;
+    // std::set<std::pair<double, ssize_t>> order;
+    std::vector<std::pair<double, ssize_t>> order;
     std::vector<Update> predecessor_updates;
+    std::vector<bool> mark;
 };
 
 ArgSortNode::ArgSortNode(ArrayNode* arr_ptr)
@@ -61,7 +120,11 @@ double const* ArgSortNode::buff(const State& state) const {
     return data_ptr<ArgSortNodeData>(state)->buff();
 }
 
-void ArgSortNode::commit(State& state) const { data_ptr<ArgSortNodeData>(state)->commit(); }
+void ArgSortNode::commit(State& state) const {
+    auto node_data = data_ptr<ArgSortNodeData>(state);
+    node_data->predecessor_updates.clear();
+    node_data->commit();
+}
 
 std::span<const Update> ArgSortNode::diff(const State& state) const {
     return data_ptr<ArgSortNodeData>(state)->diff();
@@ -91,12 +154,16 @@ void ArgSortNode::propagate(State& state) const {
     // Make the modifications to the std::set based on the updates.
     for (const Update& update : pred_diff) {
         if (!update.placed()) {
-            node_data->order.erase(std::make_pair(update.old, update.index));
+            // node_data->order.erase(std::make_pair(update.old, update.index));
+            node_data->order.emplace_back(update.old, update.index);
         }
         if (!update.removed()) {
-            node_data->order.insert(std::make_pair(update.value, update.index));
+            // node_data->order.insert(std::make_pair(update.value, update.index));
+            node_data->order.emplace_back(update.value, update.index);
         }
     }
+
+    node_data->sort();
 
     // Assign the new order as determined by the ordering of the std::set.
     // A further optimization could be to track the earliest modified (final) index
@@ -113,12 +180,16 @@ void ArgSortNode::revert(State& state) const {
     // Revert the changes to `order` by going over the predecessor's previous updates in reverse
     for (const Update& update : node_data->predecessor_updates | std::views::reverse) {
         if (!update.placed()) {
-            node_data->order.insert(std::make_pair(update.old, update.index));
+            // node_data->order.insert(std::make_pair(update.old, update.index));
+            node_data->order.emplace_back(update.old, update.index);
         }
         if (!update.removed()) {
-            node_data->order.erase(std::make_pair(update.value, update.index));
+            // node_data->order.erase(std::make_pair(update.value, update.index));
+            node_data->order.emplace_back(update.value, update.index);
         }
     }
+
+    node_data->sort();
 
     node_data->predecessor_updates.clear();
     node_data->revert();

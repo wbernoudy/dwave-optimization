@@ -166,7 +166,7 @@ TEST_CASE("ArgSortNode") {
 
         BENCHMARK("what") {
             for (ssize_t iteration = 0; iteration < 1; iteration++) {
-                for (ssize_t i = 0; i < 1000; i++) {
+                for (ssize_t i = 0; i < 10000; i++) {
                     arr_ptr->set_value(state, index_dist(rng), values_dist(rng));
                 }
                 arr_ptr->propagate(state);
