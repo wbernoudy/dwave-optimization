@@ -151,6 +151,32 @@ TEST_CASE("ArgSortNode") {
             }
         }
     }
+
+    GIVEN("A testing node") {
+        const ssize_t N = 10000;
+        auto arr_ptr = graph.emplace_node<IntegerNode>(std::initializer_list<ssize_t>{N});
+        auto argsort_ptr = graph.emplace_node<ArgSortNode>(arr_ptr);
+
+        auto state = graph.initialize_state();
+
+        auto rng = std::default_random_engine(666);
+
+        auto index_dist = std::uniform_int_distribution<>(0, N - 1);
+        auto values_dist = std::uniform_int_distribution<>(0, 1000);
+
+        BENCHMARK("what") {
+            for (ssize_t iteration = 0; iteration < 1; iteration++) {
+                for (ssize_t i = 0; i < 1000; i++) {
+                    arr_ptr->set_value(state, index_dist(rng), values_dist(rng));
+                }
+                arr_ptr->propagate(state);
+                argsort_ptr->propagate(state);
+
+                arr_ptr->revert(state);
+                argsort_ptr->revert(state);
+            }
+        };
+    }
 }
 
 }  // namespace dwave::optimization
